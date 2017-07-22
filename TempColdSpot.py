@@ -1,13 +1,7 @@
 """
 Detects Cold Spot on Temperature Map of Planck 2015
 
-x1. downgrade map
-x2. take power spectrum
-x3. generate simulations (correct for ell)
-4. filter map with mexican hat (rotate map correctly?, check various things)
-5. Add noise, convolutions, rotations
-6. compare features of data with simulations
-7. apply mask
+
 """
 
 import numpy as np
@@ -27,12 +21,7 @@ class TempMap(object):
     """
     def __init__(self, res=None):
         '''
-        Checks for Planck data at the expected directory ('/home2/nkoukou/data')
-        and then imports:
-        
-        - mask: lensing potential map mask #!!! reference
-        - klm: spherical harmonic coefficients of lensing convergence kappa #!!! units?
-        - rawSpec: approximate noise and signal+noise power spectra of kappa #!!! units?
+        !!!
         '''
         self.name = 'CMBT_'
         
@@ -90,7 +79,7 @@ class TempMap(object):
         '''
         Downgrades resolution of map.
         
-        Mask may be optimally downgraded in other ways. !!!
+        Mask may be optimally downgraded in other ways. #!!! Apply better mask
         '''
         self.map = hp.ud_grade(self.map, res, power=0)
         self.mask = hp.ud_grade(self.mask, res, power=0)
@@ -107,21 +96,21 @@ class TempMap(object):
                                        alm=True, pol=False)
         
         if write:
-            res = hp.get_nside(self.map)
-            self.write(Cl=True, fname=self.name+'cl_n'+str(res)+'.fits')
-            self.write(Alm=True, fname=self.name+'alm_n'+str(res)+'.fits')
+            self.write(Cl=True, fname=self.name+'cl_n'+str(self.res)+'.fits')
+            self.write(Alm=True, fname=self.name+'alm_n'+str(self.res)+'.fits')
     
     def plotMap(self, mask=False):
         '''
         Plots map.
         
-        Mask is applied when value < 1. !!!
+        Mask is applied when value < 1. #!!! Apply better mask
         '''
         Map = np.copy(self.map)
         if mask:
             Map[self.mask<1.] = hp.UNSEEN
             Map = hp.ma(Map)
-        hp.mollview(Map, coord='G', title='CMB Temperature', cbar=True, unit=r'$K$')
+        hp.mollview(Map, coord='G', title='CMB Temperature', cbar=True, 
+                    unit=r'$K$')
 
     def genSim(self, lmax=None, plot=False):
         '''
@@ -134,11 +123,13 @@ class TempMap(object):
         spec = np.loadtxt(DIRPOW, comments='#', delimiter=None, usecols=(0,1))
         ell, cls = spec[:lmax, 0], spec[:lmax, 1]
         
-        cls = 2*np.pi/(ell*(ell+1)) * cls #!!! correction
+        cls = 2*np.pi/(ell*(ell+1)) * cls #!!! Correction (must be correct)
         
-        sim = hp.synfast(cls, self.res, alm=False, pol=True, pixwin=False,
-                         fwhm=BEAM, sigma=None, verbose=True) #!!! parameters??
-        sim = 1e-6 * sim #Convert uK to K
+        sim = hp.synfast(cls, self.res, alm=False, pol=False, pixwin=False,
+                         fwhm=BEAM, sigma=None, verbose=False)
+
+        #Convert uK to K
+        sim = 1e-6 * sim
         
         if plot:
             hp.mollview(sim, title='Simulated CMB T', cbar=True,
