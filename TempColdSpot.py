@@ -1,7 +1,8 @@
 """
 Detects Cold Spot on Temperature Map of Planck 2015
 
-
+!!!
+- Apply better mask while downgrading and plotting
 """
 
 import numpy as np
@@ -21,24 +22,45 @@ class TempMap(object):
     """
     def __init__(self, res=None):
         '''
-        !!!
+        Tries to read the temperature map of given resolution from expected
+        directory. If res=None, the resilution is 2048. Then, all necessary raw
+        data are loaded (map values, mask and alm components along with less
+        significant data).
         '''
         self.name = 'CMBT_'
+        self.hdu = ap.io.fits.open(DIRMAP)
         
         try:
             if res is None:
-                direc = DIRMAP
-                self.map = hp.read_map(direc, field=0)
-                self.mask = hp.read_map(direc, field=1)
-                self.hdu = ap.io.fits.open(direc)
+                self.map = hp.read_map(DIRMAP, field=0)
+                self.mask = hp.read_map(DIRMAP, field=1)
                 self.res = hp.get_nside(self.map)
             else:
                 self.res = res
-                self.map = hp.read_map(self.name+'map_n'+str(res)+'.fits')
-                self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits')
+                self.map = hp.read_map(self.name+'map_n'+str(res)+'.fits', 
+                                       verbose=False)
+                self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits',
+                                        verbose=False)
         except:
             raise FileNotFoundError('No such file or directory')
         
+        lm = hp.Alm.getlm(3*self.res-1)
+        self.ELL = lm[0]
+        self.EM = lm[1]
+        
+        self.calcSpectrum(write=False)
+    
+    def set_res(self, res):
+        if res==self.res: return
+        try:
+            self.res = res
+            self.map = hp.read_map(self.name+'map_n'+str(res)+'.fits', 
+                                   verbose=False)
+            self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits',
+                                    verbose=False)
+        except:
+            raise FileNotFoundError('No such file or directory')
+            
         lm = hp.Alm.getlm(3*self.res-1)
         self.ELL = lm[0]
         self.EM = lm[1]
@@ -53,7 +75,7 @@ class TempMap(object):
             for i in hdulist:
                 print(self.hdu[i].header)
         elif h in hdulist:
-            print(self.hdu[h])
+            print(self.hdu[h].header)
         else:
             print('Invalid header')
     
@@ -79,7 +101,7 @@ class TempMap(object):
         '''
         Downgrades resolution of map.
         
-        Mask may be optimally downgraded in other ways. #!!! Apply better mask
+        Mask may be optimally downgraded in other ways.
         '''
         self.map = hp.ud_grade(self.map, res, power=0)
         self.mask = hp.ud_grade(self.mask, res, power=0)
@@ -103,7 +125,7 @@ class TempMap(object):
         '''
         Plots map.
         
-        Mask is applied when value < 1. #!!! Apply better mask
+        Mask is applied when value < 1.
         '''
         Map = np.copy(self.map)
         if mask:
@@ -112,16 +134,16 @@ class TempMap(object):
         hp.mollview(Map, coord='G', title='CMB Temperature', cbar=True, 
                     unit=r'$K$')
 
-    def genSim(self, lmax=None, plot=False):
+    def genSim(self, lmax=None, plot=False, mask=False):
         '''
         Generates a simulation from the theoretical temperature power spectrum
         (no noise). If lmax is set to None, all components of the map are used 
         for the simulation.
         '''
-        if lmax is None: lmax = self.cl.size
+        if lmax is None: lmax = self.cl.size-1
         
         spec = np.loadtxt(DIRPOW, comments='#', delimiter=None, usecols=(0,1))
-        ell, cls = spec[:lmax, 0], spec[:lmax, 1]
+        ell, cls = spec[:lmax+1, 0], spec[:lmax+1, 1]
         
         cls = 2*np.pi/(ell*(ell+1)) * cls #!!! Correction (must be correct)
         
@@ -132,10 +154,13 @@ class TempMap(object):
         sim = 1e-6 * sim
         
         if plot:
-            hp.mollview(sim, title='Simulated CMB T', cbar=True,
+            Map = np.copy(sim)
+            if mask:
+                Map[self.mask<1.] = hp.UNSEEN
+                Map = hp.ma(Map)
+            hp.mollview(Map, title='Simulated CMB T', cbar=True,
                         unit=r'$K$')
         return sim
-
 
 
 

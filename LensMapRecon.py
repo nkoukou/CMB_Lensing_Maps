@@ -64,7 +64,7 @@ class LensingMap(object):
             Plot = Map
             Plot[self.mask==0.] = hp.UNSEEN
             Plot = hp.ma(Plot)
-            hp.mollview(Map, title=title, cbar=True, unit='dimensionless?') #!!! cmap param?
+            hp.mollview(Map, title=title, cbar=True, unit='dimensionless?')
         
         self.map = Map
         return Map
