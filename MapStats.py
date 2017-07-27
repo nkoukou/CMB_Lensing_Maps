@@ -2,12 +2,10 @@
 Analyses Cold Spot statistics
 
 !!!
-- smoothing of real data vs smoothing of sims
+- Fix mask according to 2013 XXIII
 - Choose sim only if at least as extreme as CS (with S statistic)
 - V is TOO low, M is high, S & K are TOO high (in abs values)
 - Perform chi squared test
-- Apply mask before calculations are performed
-- Keep code fully independent of SMWH filter
 
 ?. Turn into lensing maps (signal to noise is high => simulations are/should be 
    noisy, units, transfer code, filters)
@@ -44,7 +42,7 @@ class StatsMap(tcs.TempMap):
     def set_R(self, aperture):
         self.R = aperture
     
-    def detectCS(self, Map):
+    def detectCS(self, Map=None):
         '''
         Returns coordinates of coldest spot on given map. Coldest is defined by 
         lowest temperature.
@@ -66,7 +64,7 @@ class StatsMap(tcs.TempMap):
                              inclusive=False)
         return pixs
 
-    def calcStats(self, Map, centre):
+    def calcStats(self, centre, Map=None):
         '''
         Calculates the first four moments, starting from the mean, in given map
         and disk of given centre.
@@ -77,13 +75,13 @@ class StatsMap(tcs.TempMap):
         
         N = pixs.size
         mean = 1./N * sample.sum()
-        var  = np.sqrt( 1./N * (sample**2).sum() )
-        skew = 1./(N*var**3) * (sample**3).sum()
-        kur  = 1./(N*var**4) * (sample**4).sum() - 3 
+        var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
+        skew = 1./(N*var**3) * ((sample-mean)**3).sum()
+        kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3 
         
         return mean, var, skew, kur
 
-    def calcAvgStats(self, Map, centre):
+    def calcAvgStats(self, centre, Map):
         '''
         Calculates disk averages of the first four moments, as calculated by 
         calcStats().
@@ -94,11 +92,11 @@ class StatsMap(tcs.TempMap):
         moments = np.zeros(len(titles))
         for pix in pixs:
             coord = hp.pix2ang(nside=self.res, ipix=pix)
-            stats = self.calcStats(Map, coord)
+            stats = self.calcStats(coord, Map)
             moments += np.array(stats)
         return 1./N * moments
         
-    def mapStats(self, Map, avg=True):
+    def mapStats(self, Map=None, avg=True):
         '''
         Plots moments calculated at disks of class aperture, over the whole 
         given map.
@@ -108,8 +106,8 @@ class StatsMap(tcs.TempMap):
         
         for pix in range(Map.size):
             coord = hp.pix2ang(nside=self.res, ipix=pix)
-            if avg: moments = self.calcAvgStats(Map, coord)
-            if not avg: moments = self.calcStats(Map, coord)
+            if avg: moments = self.calcAvgStats(coord, Map)
+            if not avg: moments = self.calcStats(coord, Map)
             for i in range(len(titles)):
                 stats[i].append(moments[i])
             
@@ -120,14 +118,15 @@ class StatsMap(tcs.TempMap):
             hp.mollview(stats[i], title=titles[i])
         return stats
 
-    def filtMap(self, Map):
+    def filtMap(self, Map=None):
         '''
         Applies SMHW filter on map. (Vielva, 2010)
         '''
         if Map is None:
             Map = self.map
             mlm = self.alm
-        mlm = hp.map2alm(Map)
+        else:
+            mlm = hp.map2alm(Map)
         
         cb, lon = hp.pix2ang(self.res, np.arange(Map.size))
         lmax = self.ELL.max()
@@ -180,7 +179,8 @@ class StatsMap(tcs.TempMap):
             mask = self.filtMask(Mbd)
             Map[mask<Nbd] = hp.UNSEEN
             Map = hp.ma(Map)
-        hp.mollview(Map, title='Filtered CMB T', cbar=True, unit=r'$K$')
+        hp.mollview(Map, title='Filtered CMB T (scale={0})'.format(self.R), 
+                    cbar=True, unit=r'$K$')
 
     def compareSims(self, nsims=100):
         '''
@@ -189,12 +189,12 @@ class StatsMap(tcs.TempMap):
         '''
         data = self.filtMap(Map=None)
         coord = lonlat2colatlon(coordCS)
-        moments = self.calcAvgStats(Map=data, centre=coord)
+        moments = self.calcAvgStats(coord, data)
         for s in range(nsims):
             sim = self.genSim(plot=False, mask=False)
             sim = self.filtMap(sim)
             coord = self.detectCS(sim)
-            newmoments = self.calcAvgStats(sim, coord)
+            newmoments = self.calcAvgStats(coord, sim)
             moments = np.vstack((moments, newmoments))
             if s%10==0: print('sim: ', s)
         return moments
@@ -224,6 +224,7 @@ class StatsMap(tcs.TempMap):
         Plots angluar profiles of all four moments of real data against the 
         average of given number of simulations.
         '''
+        Rf = self.R
         self.set_R(apertures[0])
         print('R: ', self.R)
         moments = self.compareSims(nsims=nsims)
@@ -251,6 +252,7 @@ class StatsMap(tcs.TempMap):
                 ax.yaxis.get_major_formatter().set_powerlimits((0, 1))
             fig.tight_layout()
         
+        self.set_R(Rf)
         return np.dstack((data, simsAvg, simsStd))
 
 def lonlat2colatlon(coord):
@@ -281,7 +283,22 @@ def mexHat(R, cb):
     
     return W
 
-
+def pickGalMask(mask):
+    nside = hp.npix2nside(mask.size)
+    galaxy = [hp.ang2pix(2048, np.pi/2, 0)]
+    s = 0
+    thresh = int(5e6)
+    
+    while len(galaxy)<thresh:
+        print(len(galaxy))
+        for g in galaxy[s:]:
+            nn = hp.get_all_neighbours(nside, g)
+            for n in nn:
+                if n in galaxy: continue
+                if mask[n]==0: 
+                    galaxy.append(n)
+            s +=1
+    return np.array(galaxy)
 '''
 # TESTING FUNCS
 

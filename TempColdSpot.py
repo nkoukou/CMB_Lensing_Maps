@@ -41,14 +41,13 @@ class TempMap(object):
                                        verbose=False)
                 self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits',
                                         verbose=False)
+                self.calcSpectrum(write=False)
         except:
             raise FileNotFoundError('No such file or directory')
         
         lm = hp.Alm.getlm(3*self.res-1)
         self.ELL = lm[0]
         self.EM = lm[1]
-        
-        self.calcSpectrum(write=False)
     
     def set_res(self, res):
         if res==self.res: return
