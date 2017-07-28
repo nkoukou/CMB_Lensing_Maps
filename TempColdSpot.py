@@ -1,8 +1,9 @@
 """
 Detects Cold Spot on Temperature Map of Planck 2015
 
-!!!
-- Apply better mask while downgrading and plotting
+- Put all fits files in new Temp directory, if file exists load it, else create all dependencies
+- Cleaner code, more independent classes
+- Methods should depend on lmax
 """
 
 import numpy as np
@@ -14,6 +15,7 @@ import matplotlib.pylab as plt
 DIRMAP = 'COM_CMB_IQU-smica-field-Int_2048_R2.01_full.fits'
 DIRPOW = 'COM_PowerSpect_CMB-base-plikHM-TT-lowTEB-minimum-theory_R2.02.txt'
 BEAM = 5./60 * np.pi/180
+FWHM = {16: 640, 32: 320, 64: 160, 128: 80, 256: 40, 512: 20, 1024: 10, 2048: 5}
 
 class TempMap(object):
     """
@@ -35,13 +37,14 @@ class TempMap(object):
                 self.map = hp.read_map(DIRMAP, field=0)
                 self.mask = hp.read_map(DIRMAP, field=1)
                 self.res = hp.get_nside(self.map)
+                self.calcSpectrum(mode='r')
             else:
                 self.res = res
                 self.map = hp.read_map(self.name+'map_n'+str(res)+'.fits', 
                                        verbose=False)
                 self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits',
                                         verbose=False)
-                self.calcSpectrum(write=False)
+                self.calcSpectrum(mode='c')
         except:
             raise FileNotFoundError('No such file or directory')
         
@@ -59,12 +62,11 @@ class TempMap(object):
                                     verbose=False)
         except:
             raise FileNotFoundError('No such file or directory')
-            
         lm = hp.Alm.getlm(3*self.res-1)
         self.ELL = lm[0]
         self.EM = lm[1]
         
-        self.calcSpectrum(write=False)
+        self.calcSpectrum(mode='c')
         
     def printHeaders(self, h=None, hdulist=[0, 1, 2]):
         '''
@@ -86,7 +88,6 @@ class TempMap(object):
             if fname is None: fname = self.name+'map.fits'
             hp.write_map(fname, self.map, nest=False)
         if Mask:
-            print('mask')
             if fname is None: fname = self.name+'mask.fits'
             hp.write_map(fname, self.mask, nest=False)
         if Cl:
@@ -96,29 +97,64 @@ class TempMap(object):
             if fname is None: fname = self.name+'alm.fits'
             hp.write_alm(fname, self.alm)
     
-    def lowRes(self, res, write=False):
+    def lowRes(self, res, lmax=0, write=False):
         '''
         Downgrades resolution of map.
         
         Mask may be optimally downgraded in other ways.
         '''
-        self.map = hp.ud_grade(self.map, res, power=0)
-        self.mask = hp.ud_grade(self.mask, res, power=0)
+        if lmax:
+            lmax = 3*res-1
+            cf = np.pi/(180*60)
+            beam0 = hp.gauss_beam(cf*FWHM[self.res], lmax)
+            beam = hp.gauss_beam(cf*FWHM[res], lmax)
+            pixw0 = hp.pixwin(self.res)[:lmax+1]
+            pixw = hp.pixwin(res)[:lmax+1]
+            
+            #idxs = []
+            #Lmax = hp.Alm.getlmax(self.alm.size)
+            #for ell in range(lmax+1):
+            #    for em in range(ell+1):
+            #        idxs.append(hp.Alm.getidx(Lmax, ell, em))
+            #idxs = np.array(idxs)
+            #alm = self.alm[idxs]
+            msklm = hp.read_alm('CMBT_maskAlm_n2048.fits')
+            
+            fl = (beam*pixw)/(beam0*pixw0)
+            alm = hp.almxfl(self.alm, fl)
+            msklm = hp.almxfl(msklm, fl)
+            lowmap = hp.alm2map(alm, res)
+            lowmask = hp.alm2map(msklm, res)
+            lowmask[lowmask<0.9] = 0
+            lowmask[lowmask>=0.9] = 1
+            self.map = lowmap
+            self.mask = lowmask
+        
+        if not lmax:
+            self.map = hp.ud_grade(self.map, res, power=0)
+            self.mask = hp.ud_grade(self.mask, res, power=0)
         
         if write:
             self.write(Map=True, fname=self.name+'map_n'+str(res)+'.fits')
             self.write(Mask=True, fname=self.name+'mask_n'+str(res)+'.fits')
+        
+        print('setting')
+        self.set_res(res)
     
-    def calcSpectrum(self, write=False):
+    def calcSpectrum(self, mode='c'):
         '''
         Calculates spectrum from temperature map (including noise).
         '''
-        self.cl, self.alm = hp.anafast(self.map, lmax=None, mmax=None, 
-                                       alm=True, pol=False)
-        
-        if write:
+        if mode is None: return
+        if mode=='c':
+            self.cl, self.alm = hp.anafast(self.map, lmax=None, mmax=None, 
+                                           alm=True, pol=False)
+        if mode=='w':
             self.write(Cl=True, fname=self.name+'cl_n'+str(self.res)+'.fits')
             self.write(Alm=True, fname=self.name+'alm_n'+str(self.res)+'.fits')
+        if mode=='r':
+            self.cl = hp.read_cl(self.name+'cl_n'+str(self.res)+'.fits')
+            self.alm = hp.read_alm(self.name+'alm_n'+str(self.res)+'.fits')
     
     def plotMap(self, mask=False):
         '''

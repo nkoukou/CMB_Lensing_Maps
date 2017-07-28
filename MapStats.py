@@ -3,7 +3,6 @@ Analyses Cold Spot statistics
 
 !!!
 - Fix mask according to 2013 XXIII
-- Choose sim only if at least as extreme as CS (with S statistic)
 - V is TOO low, M is high, S & K are TOO high (in abs values)
 - Perform chi squared test
 
@@ -62,6 +61,7 @@ class StatsMap(tcs.TempMap):
         RADIUS = np.radians(self.R)
         pixs = hp.query_disc(nside=self.res, vec=VEC, radius=RADIUS, 
                              inclusive=False)
+        pixs = pixs[np.where(self.mask[pixs]!=0)]
         return pixs
 
     def calcStats(self, centre, Map=None):
@@ -323,10 +323,12 @@ class StatsMap(tcs.TempMap):
         average of given number of simulations.
         '''
         Rf = self.R
+        self.filterMask()
         self.set_R(apertures[0])
         print('R: ', self.R)
         moments = self.compareSims(nsims=nsims)
         for aperture in apertures[1:]:
+            self.filterMask()
             self.set_R(aperture)
             print('R: ', self.R)
             newmoments = self.compareSims(nsims)
