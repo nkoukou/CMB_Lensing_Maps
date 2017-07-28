@@ -24,7 +24,7 @@ titles = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered in
 
 class StatsMap(tcs.TempMap):
     """
-    Contains all statistical analysis tools to detect local extrema on a map.
+    Contains statistical analysis tools to detect local extrema on a map.
     """
     def __init__(self, res, aperture):
         '''
@@ -48,7 +48,7 @@ class StatsMap(tcs.TempMap):
         lowest temperature.
         '''
         if Map is None: Map = self.map
-        pix = np.where(Map==Map.min())[0][0]
+        pix = np.where(Map==Map[self.mask==1].min())[0][0]
         coord = hp.pix2ang(nside=self.res, ipix=pix)
         return coord
 
@@ -75,9 +75,9 @@ class StatsMap(tcs.TempMap):
         
         N = pixs.size
         mean = 1./N * sample.sum()
-        var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
-        skew = 1./(N*var**3) * ((sample-mean)**3).sum()
-        kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3 
+        var  = np.sqrt( 1./N * (sample**2).sum() )
+        skew = 1./(N*var**3) * (sample**3).sum()
+        kur  = 1./(N*var**4) * (sample**4).sum() - 3 
         
         return mean, var, skew, kur
 
@@ -118,10 +118,15 @@ class StatsMap(tcs.TempMap):
             hp.mollview(stats[i], title=titles[i])
         return stats
 
+
+
+
+
+
     def filtMap(self, Map=None):
         '''
         Applies SMHW filter on map. (Vielva, 2010)
-        '''
+        '''            
         if Map is None:
             Map = self.map
             mlm = self.alm
@@ -141,6 +146,68 @@ class StatsMap(tcs.TempMap):
         convAlm = hp.almxfl(alm=mlm, fl=fl)
         newmap = hp.alm2map(convAlm, nside=self.res, pol=False, verbose=False)
         return newmap
+
+    def filterMask(self, cbbd=26):
+        '''
+        Filters mask according to Planck 2013 XXIII section 4.5.
+        # !!! Separate GalPlane from PointSources first in Nside=2048, then 
+        degrade to 1024 then follow procedure. m2 is not working
+        '''        
+        m = np.copy(self.mask)
+        m[m<0.5] = 0
+        m[m>0.5] = 1
+        
+        aux = np.copy(self.mask)
+        #aux[aux<1] = 0
+        
+        cb, lon = hp.pix2ang(self.res, np.arange(self.map.size))
+        R = np.radians(self.R)
+        lmax = self.ELL.max()
+        
+        # At current Nside, isolate Galactic plane
+        bdu, bdd = np.radians(90-cbbd), np.radians(90+cbbd)
+        
+        cbu, lonu = cb[cb<bdu], lon[cb<bdu]
+        cbd, lond = cb[cb>bdd], lon[cb>bdd]
+        
+        pixsu = hp.ang2pix(self.res, cbu, lonu)
+        pixsd = hp.ang2pix(self.res, cbd, lond)
+        
+        aux[pixsu] = aux[pixsd] = 1
+        
+        # Find and extend boundaries by twice the aperture
+        m1 = np.copy(aux)
+        m1[m1<0.5] = 0
+        m1[m1>0.5] = 1
+        
+        bds = []
+        for pix in np.where(m1==0):
+            if 1 in m1[hp.get_all_neighbours(self.res, pix)]:
+                bds.append(pix)
+        
+        vecs = hp.pix2vec(self.res, np.array(bds))
+        vecs = np.vstack((vecs[0], vecs[1], vecs[2])).T
+        for vec in vecs:
+            pixs = hp.query_disc(self.res, vec, 2*R)
+            m1[pixs] = 0
+        
+        # Convolve with SMHW
+        m2 = np.copy(aux)
+        mlm = hp.map2alm(m2)
+        
+        W = mexHat(R, cb)
+        wlm = hp.map2alm(W)[:lmax+1]
+        
+        ellFac = np.sqrt(4*np.pi/(2.*np.arange(lmax+1)+1))
+        fl = ellFac*np.conj(wlm)
+        convAlm = hp.almxfl(alm=mlm, fl=fl)
+        
+        m2 = hp.alm2map(convAlm, nside=self.res, pol=False, verbose=False)
+        m2[m2<0.1] = 0
+        m2[m2>0.1] = 1
+        
+        self.mask = m*m1
+
     
     def filtMask(self, Mbd=0.9):
         '''
@@ -177,10 +244,41 @@ class StatsMap(tcs.TempMap):
         Map = self.filtMap(Map)
         if mask:
             mask = self.filtMask(Mbd)
-            Map[mask<Nbd] = hp.UNSEEN
+            #Map[mask<Nbd] = hp.UNSEEN
+            Map[self.mask==0] = hp.UNSEEN
             Map = hp.ma(Map)
         hp.mollview(Map, title='Filtered CMB T (scale={0})'.format(self.R), 
                     cbar=True, unit=r'$K$')
+
+
+
+
+
+    def compareTemp(self, nsims=100, plot=True):
+        '''
+        Calculates moments of real map and of nsims in number simulations.
+        Moments are based on disk averages. 
+        '''
+        self.filterMask()
+        data = self.filtMap(Map=None)
+        coord = lonlat2colatlon(coordCS)
+        TCS = data[self.mask==1].min()
+        
+        T = np.zeros(nsims)
+        for s in range(nsims):
+            if s%50==0: print('sim: ', s)
+            sim = self.genSim(plot=False, mask=False)
+            sim = self.filtMap(sim)
+            T[s] = sim[self.mask==1].min()
+        
+        if plot:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.hist(T, bins=20, normed=False, color='b')
+            ax.axvline(x=TCS, color='k', ls='--')
+            ax.set_xlabel(r'$T_{cold}$')
+            ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+        return np.concatenate((np.array([TCS]), T))
 
     def compareSims(self, nsims=100):
         '''
@@ -283,6 +381,7 @@ def mexHat(R, cb):
     
     return W
 
+'''
 def pickGalMask(mask):
     nside = hp.npix2nside(mask.size)
     galaxy = [hp.ang2pix(2048, np.pi/2, 0)]
@@ -299,6 +398,25 @@ def pickGalMask(mask):
                     galaxy.append(n)
             s +=1
     return np.array(galaxy)
+'''
+
+def pickGalMask(mask):
+    mid = int(mask.size/2)
+    q = mid
+    cond = True
+    while cond or mask[q]==0:
+        if q%int(5e5)==0: print(q)
+        if mask[q]!=0:
+            test = []
+            for n in range(1000):
+                test.append(mask[q-n])
+                if 0 not in test:
+                    cond = False
+                else:
+                    cond = True
+                    q -= np.where(np.array(test)==0)[0][0]
+        q -=1
+    return q
 '''
 # TESTING FUNCS
 

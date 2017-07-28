@@ -155,7 +155,7 @@ class TempMap(object):
         if plot:
             Map = np.copy(sim)
             if mask:
-                Map[self.mask<1.] = hp.UNSEEN
+                Map[self.mask==0.] = hp.UNSEEN
                 Map = hp.ma(Map)
             hp.mollview(Map, title='Simulated CMB T', cbar=True,
                         unit=r'$K$')
