@@ -1,9 +1,6 @@
 """
-Detects Cold Spot on Temperature Map of Planck 2015
-
-- Put all fits files in new Temp directory, if file exists load it, else create all dependencies
-- Cleaner code, more independent classes
-- Methods should depend on lmax
+Loads Temperature Map of Planck 2015 data release 
+(ref. Planck 2015 results XVI)..
 """
 
 import numpy as np
@@ -11,160 +8,204 @@ import scipy.signal as ss
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
+import os.path
 
-DIRMAP = 'COM_CMB_IQU-smica-field-Int_2048_R2.01_full.fits'
-DIRPOW = 'COM_PowerSpect_CMB-base-plikHM-TT-lowTEB-minimum-theory_R2.02.txt'
-BEAM = 5./60 * np.pi/180
-FWHM = {16: 640, 32: 320, 64: 160, 128: 80, 256: 40, 512: 20, 1024: 10, 2048: 5}
+# Global constants and functions
+DIRMAP = 'CMBT_Maps/COM_CMB_IQU-smica-field-Int_2048_R2.01_full.fits'
+DIRPOW = 'CMBT_Maps/COM_PowerSpect_CMB-base-plikHM-TT-lowTEB-minimum-theory_R2.02.txt'
+
+COORDCS = (210, -57) #lon, lat in degrees in Galactic coordinates
+BEAM = 5./60 * np.pi/180 #radians
+
+NSIDES = [2**x for x in range(4, 12)]
+FWHM = {};
+for nside in NSIDES: FWHM[nside] = BEAM * (2048/nside) #radians
+
+LMAX = lambda res: 3*res - 1
+STR = lambda res: str(res).zfill(4)
+
+###
 
 class TempMap(object):
-    """
-    Represents the CMB Lensing Map of the Planck 2015 data release (ref. Planck
-    2015 results XV. Gravitational lensing).
-    """
+    '''
+    Represents the CMB Temperature Map of the Planck 2015 data release.
+    '''
     def __init__(self, res=None):
         '''
-        Tries to read the temperature map of given resolution from expected
-        directory. If res=None, the resilution is 2048. Then, all necessary raw
-        data are loaded (map values, mask and alm components along with less
-        significant data).
+        Read the temperature map of given resolution from expected directory. 
+        If res=None, the original fits file is read with resolution 2048. Then, 
+        all necessary secondary data are also loaded (e.g. mask).
         '''
-        self.name = 'CMBT_'
+        self._overwrite = 1
+        self.dir = 'CMBT_Maps/n'
         self.hdu = ap.io.fits.open(DIRMAP)
         
-        try:
-            if res is None:
-                self.map = hp.read_map(DIRMAP, field=0)
-                self.mask = hp.read_map(DIRMAP, field=1)
-                self.res = hp.get_nside(self.map)
-                self.calcSpectrum(mode='r')
-            else:
-                self.res = res
-                self.map = hp.read_map(self.name+'map_n'+str(res)+'.fits', 
-                                       verbose=False)
-                self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits',
-                                        verbose=False)
-                self.calcSpectrum(mode='c')
-        except:
-            raise FileNotFoundError('No such file or directory')
-        
-        lm = hp.Alm.getlm(3*self.res-1)
-        self.ELL = lm[0]
-        self.EM = lm[1]
-    
-    def set_res(self, res):
-        if res==self.res: return
-        try:
+        if res is None:
+            self.map = hp.read_map(DIRMAP, field=0)
+            self.mask = hp.read_map(DIRMAP, field=1)
+            self.res = hp.get_nside(self.map)
+            
+        elif res in NSIDES:
+            self.map=hp.read_map(self.dir+STR(res)+'_map.fits', verbose=False)
+            print('MAP')
+            self.alm = hp.read_alm(self.dir+STR(res)+'_alm.fits')
+            print('ALM')
+            self.cl = hp.read_cl(self.dir+STR(res)+'_cl.fits')
+            print('CL')
+            
+            self.mask=hp.read_map(self.dir+STR(res)+'_mask.fits', verbose=False)
+            print('MASK')
+            self.malm = hp.read_alm(self.dir+STR(res)+'_malm.fits')
+            print('MALM')
+            self.mcl = hp.read_cl(self.dir+STR(res)+'_mcl.fits')
+            print('MCL')
+            
             self.res = res
-            self.map = hp.read_map(self.name+'map_n'+str(res)+'.fits', 
-                                   verbose=False)
-            self.mask = hp.read_map(self.name+'mask_n'+str(res)+'.fits',
-                                    verbose=False)
-        except:
-            raise FileNotFoundError('No such file or directory')
-        lm = hp.Alm.getlm(3*self.res-1)
+            
+        else:
+            raise ValueError('Resolution (Nside) must be a power of 2')
+        
+        self.lmax = LMAX(self.res)
+        lm = hp.Alm.getlm(self.lmax)
+        print('LM')
         self.ELL = lm[0]
         self.EM = lm[1]
         
-        self.calcSpectrum(mode='c')
-        
-    def printHeaders(self, h=None, hdulist=[0, 1, 2]):
+        if not os.path.isfile(self.dir+str(NSIDES[-1])+'_map.fits'):
+            res = NSIDES[-1]
+            self.cl, self.alm = hp.anafast(self.map, alm=True, pol=False)
+            fname = self.dir+STR(res)+'_map.fits'
+            hp.write_map(fname, self.map, nest=False)
+            fname = self.dir+STR(res)+'_alm.fits'
+            hp.write_alm(fname, self.alm)
+            fname = self.dir+STR(res)+'_cl.fits'
+            hp.write_cl(fname, self.cl)
+            
+            self.mcl, self.malm = hp.anafast(self.mask, alm=True, pol=False)
+            fname = self.dir+STR(res)+'_mask.fits'
+            hp.write_map(fname, self.mask, nest=False)
+            fname = self.dir+STR(res)+'_malm.fits'
+            hp.write_alm(fname, self.malm)
+            fname = self.dir+STR(res)+'_mcl.fits'
+            hp.write_cl(fname, self.mcl)
+    
+    # Setters and exporting methods
+    def set_res(self, res):
         '''
-        Prints all headers of the map.
+        Resets object with new resolution.
+        '''
+        self.__init__(int(res))
+        
+    def printHeaders(self, h=None):
+        '''
+        Prints all headers of the map fits file.
         '''
         if h is None:
-            for i in hdulist:
+            for i in range(len(self.hdu)):
                 print(self.hdu[i].header)
-        elif h in hdulist:
+        elif h in range(len(self.hdu)):
             print(self.hdu[h].header)
         else:
-            print('Invalid header')
+            raise IndexError('Invalid header index')
     
-    def write(self, Map=False, Mask=False, Cl=False, Alm=False, fname=None):
+    def _calcSpec(self):
         '''
-        Produces output data files of data types set to True.
+        Calculates spectra and alm coefficients from temperature map and mask 
+        (including noise).
         '''
-        if Map:
-            if fname is None: fname = self.name+'map.fits'
-            hp.write_map(fname, self.map, nest=False)
-        if Mask:
-            if fname is None: fname = self.name+'mask.fits'
-            hp.write_map(fname, self.mask, nest=False)
-        if Cl:
-            if fname is None: fname = self.name+'cl.fits'
-            hp.write_cl(fname, self.cl)
-        if Alm:
-            if fname is None: fname = self.name+'alm.fits'
-            hp.write_alm(fname, self.alm)
+        if not self._overwrite: raise Exception('Not allowed to overwite')
+        
+        self.cl = hp.anafast(self.map, alm=False, pol=False)
+        self.mcl = hp.anafast(self.mask, alm=False, pol=False)
     
-    def lowRes(self, res, lmax=0, write=False):
+    def _lowRes(self, res, heal=False, bd=0.9):
         '''
-        Downgrades resolution of map.
-        
-        Mask may be optimally downgraded in other ways.
+        Downgrades resolution of map (ref. Planck 2015 results XVI. Section 2).
         '''
-        if lmax:
-            lmax = 3*res-1
-            cf = np.pi/(180*60)
-            beam0 = hp.gauss_beam(cf*FWHM[self.res], lmax)
-            beam = hp.gauss_beam(cf*FWHM[res], lmax)
-            pixw0 = hp.pixwin(self.res)[:lmax+1]
-            pixw = hp.pixwin(res)[:lmax+1]
-            
-            #idxs = []
-            #Lmax = hp.Alm.getlmax(self.alm.size)
-            #for ell in range(lmax+1):
-            #    for em in range(ell+1):
-            #        idxs.append(hp.Alm.getidx(Lmax, ell, em))
-            #idxs = np.array(idxs)
-            #alm = self.alm[idxs]
-            msklm = hp.read_alm('CMBT_maskAlm_n2048.fits')
-            
-            fl = (beam*pixw)/(beam0*pixw0)
-            alm = hp.almxfl(self.alm, fl)
-            msklm = hp.almxfl(msklm, fl)
-            lowmap = hp.alm2map(alm, res)
-            lowmask = hp.alm2map(msklm, res)
-            lowmask[lowmask<0.9] = 0
-            lowmask[lowmask>=0.9] = 1
-            self.map = lowmap
-            self.mask = lowmask
+        if not self._overwrite: raise Exception('Not allowed to overwite')
         
-        if not lmax:
+        if heal:
             self.map = hp.ud_grade(self.map, res, power=0)
             self.mask = hp.ud_grade(self.mask, res, power=0)
         
-        if write:
-            self.write(Map=True, fname=self.name+'map_n'+str(res)+'.fits')
-            self.write(Mask=True, fname=self.name+'mask_n'+str(res)+'.fits')
-        
-        print('setting')
-        self.set_res(res)
+        if not heal:
+            lmax = LMAX(res)
+            
+            beam0 = hp.gauss_beam(FWHM[self.res], lmax)
+            pixw0 = hp.pixwin(self.res)[:lmax+1]
+            beam = hp.gauss_beam(FWHM[res], lmax)
+            pixw = hp.pixwin(res)[:lmax+1]
+            fl = (beam*pixw)/(beam0*pixw0)
+            
+            self.alm = hp.almxfl(self.alm, fl)
+            self.malm = hp.almxfl(self.malm, fl)
+            
+            lowmap = hp.alm2map(self.alm, res, verbose=False)
+            lowmask = hp.alm2map(self.malm, res, verbose=False)
+            lowmask[lowmask<bd] = 0
+            lowmask[lowmask>=bd] = 1
+            
+            self.map = lowmap
+            self.mask = lowmask
     
-    def calcSpectrum(self, mode='c'):
+    def _write(self, res, Map=False, Mask=False):
         '''
-        Calculates spectrum from temperature map (including noise).
+        Produces output data files of Map or Mask data or both for given 
+        resolution.
         '''
-        if mode is None: return
-        if mode=='c':
-            self.cl, self.alm = hp.anafast(self.map, lmax=None, mmax=None, 
-                                           alm=True, pol=False)
-        if mode=='w':
-            self.write(Cl=True, fname=self.name+'cl_n'+str(self.res)+'.fits')
-            self.write(Alm=True, fname=self.name+'alm_n'+str(self.res)+'.fits')
-        if mode=='r':
-            self.cl = hp.read_cl(self.name+'cl_n'+str(self.res)+'.fits')
-            self.alm = hp.read_alm(self.name+'alm_n'+str(self.res)+'.fits')
+        if not self._overwrite: raise Exception('Not allowed to overwite')            
+        
+        self._lowRes(res)
+        self._calcSpec()
+        
+        if Map:
+            fname = self.dir+STR(res)+'_map.fits'
+            hp.write_map(fname, self.map, nest=False)
+            fname = self.dir+STR(res)+'_alm.fits'
+            hp.write_alm(fname, self.alm)
+            fname = self.dir+STR(res)+'_cl.fits'
+            hp.write_cl(fname, self.cl)
+        if Mask:
+            fname = self.dir+STR(res)+'_mask.fits'
+            hp.write_map(fname, self.mask, nest=False)
+            fname = self.dir+STR(res)+'_malm.fits'
+            hp.write_alm(fname, self.malm)
+            fname = self.dir+STR(res)+'_mcl.fits'
+            hp.write_cl(fname, self.mcl)
+    
+    def _writeAll(self):
+        if not self._overwrite: raise Exception('Not allowed to overwite') 
+        for res in NSIDES[:-1]:
+            self.set_res(NSIDES[-1])
+            self._write(res, Map=True, Mask=True)
+    
+    # Map methods
+    def allPixs(self, mode='p'):
+        '''
+        Returns all indices of pixels of the map. Parameter mode can be:
+          - 'p': returns indices of pixels
+          - 'v': returns Cartesian unit vectors instead
+          - 'a': returns colatitude-longitude instead 
+        '''
+        idxs = np.arange(self.map.size)
+        if mode=='p':
+            pixs = idxs
+        elif mode=='v':
+            pixs = hp.pix2vec(self.res, idxs)
+            pixs = np.vstack((pixs[0], pixs[1], pixs[2])).T
+        elif mode=='a':
+            pixs = hp.pix2ang(self.res, idxs)
+        else:
+            raise ValueError("Mode can be 'p', 'v' or 'a'")
+        return pixs
     
     def plotMap(self, mask=False):
         '''
-        Plots map.
-        
-        Mask is applied when value < 1.
+        Plots map including mask if True.
         '''
         Map = np.copy(self.map)
         if mask:
-            Map[self.mask<1.] = hp.UNSEEN
+            Map[self.mask==0.] = hp.UNSEEN
             Map = hp.ma(Map)
         hp.mollview(Map, coord='G', title='CMB Temperature', cbar=True, 
                     unit=r'$K$')
@@ -172,8 +213,9 @@ class TempMap(object):
     def genSim(self, lmax=None, plot=False, mask=False):
         '''
         Generates a simulation from the theoretical temperature power spectrum
-        (no noise). If lmax is set to None, all components of the map are used 
-        for the simulation.
+        (no additional noise realisation is added apart from instrumental). If 
+        lmax is set to None, all spherical components are used for the 
+        simulation.
         '''
         if lmax is None: lmax = self.cl.size-1
         
@@ -193,7 +235,7 @@ class TempMap(object):
             if mask:
                 Map[self.mask==0.] = hp.UNSEEN
                 Map = hp.ma(Map)
-            hp.mollview(Map, title='Simulated CMB T', cbar=True,
+            hp.mollview(Map, coord='G', title='Simulated CMB T', cbar=True,
                         unit=r'$K$')
         return sim
 

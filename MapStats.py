@@ -1,7 +1,9 @@
 '''
-Analyses Cold Spot statistics
+Analyses Cold Spot statistics.
 
 !!!
+- Cleaner code, more independent classes
+- Methods should depend on lmax
 - Fix mask according to 2013 XXIII
 - V is TOO low, M is high, S & K are TOO high (in abs values)
 - Perform chi squared test
@@ -13,13 +15,13 @@ import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
-from importlib import reload
+from importlib import reload #!!!
 import TempColdSpot as tcs
 reload(tcs)
 
-coordCS = (210, -57) #lon, lat in degrees in Galactic coordinates
-titles = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered in
-                                                      #the statistical analysis
+# Global constants and functions
+MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered 
+                                                       #in the analysis
 
 class StatsMap(tcs.TempMap):
     """
@@ -89,7 +91,7 @@ class StatsMap(tcs.TempMap):
         if Map is None: Map = self.map
         pixs = self.getDisk(centre)
         N = pixs.size
-        moments = np.zeros(len(titles))
+        moments = np.zeros(len(MOMENTS))
         for pix in pixs:
             coord = hp.pix2ang(nside=self.res, ipix=pix)
             stats = self.calcStats(coord, Map)
@@ -102,20 +104,20 @@ class StatsMap(tcs.TempMap):
         given map.
         '''
         if Map is None: Map = self.map
-        stats = [[] for i in range(len(titles))]
+        stats = [[] for i in range(len(MOMENTS))]
         
         for pix in range(Map.size):
             coord = hp.pix2ang(nside=self.res, ipix=pix)
             if avg: moments = self.calcAvgStats(coord, Map)
             if not avg: moments = self.calcStats(coord, Map)
-            for i in range(len(titles)):
+            for i in range(len(MOMENTS)):
                 stats[i].append(moments[i])
             
             if pix%1000==0: print('pix: ', pix)
         
         stats = np.array(stats)
-        for i in range(len(titles)):
-            hp.mollview(stats[i], title=titles[i])
+        for i in range(len(MOMENTS)):
+            hp.mollview(stats[i], title=MOMENTS[i])
         return stats
 
 
@@ -209,28 +211,6 @@ class StatsMap(tcs.TempMap):
         self.mask = m*m1
 
     
-    def filtMask(self, Mbd=0.9):
-        '''
-        Applies mask on selected pixels AFTER calculations have been performed.
-        - Mbd: Only pixels of mask value >Mbd are considered before filtering
-        (Zung, Huterer, 2010)
-        '''
-        cb, lon = hp.pix2ang(self.res, np.arange(self.map.size))
-        lmax = self.ELL.max()
-        
-        mask = np.zeros(self.mask.size, dtype=float)
-        mask[self.mask>Mbd] = self.mask[self.mask>Mbd]
-        mlm = hp.map2alm(mask)
-        
-        R = np.radians(self.R)
-        W = mexHat(R, cb)
-        
-        wwlm = hp.map2alm(W*W)[:lmax+1]
-        ellFac = np.sqrt(4*np.pi/(2.*np.arange(lmax+1)+1))
-        fl = ellFac*np.conj(wwlm)
-        
-        convAlm = hp.almxfl(alm=mlm, fl=fl)
-        newmask = hp.alm2map(convAlm, nside=self.res, pol=False, verbose=False)
         
         return newmask
 
@@ -261,7 +241,7 @@ class StatsMap(tcs.TempMap):
         '''
         self.filterMask()
         data = self.filtMap(Map=None)
-        coord = lonlat2colatlon(coordCS)
+        coord = lonlat2colatlon(tcs.COORDCS)
         TCS = data[self.mask==1].min()
         
         T = np.zeros(nsims)
@@ -286,7 +266,7 @@ class StatsMap(tcs.TempMap):
         Moments are based on disk averages. 
         '''
         data = self.filtMap(Map=None)
-        coord = lonlat2colatlon(coordCS)
+        coord = lonlat2colatlon(tcs.COORDCS)
         moments = self.calcAvgStats(coord, data)
         for s in range(nsims):
             sim = self.genSim(plot=False, mask=False)
@@ -309,11 +289,11 @@ class StatsMap(tcs.TempMap):
         
         fig = plt.figure()
         c = ('b', 'r', 'y', 'g')
-        for i in range(len(titles)):
+        for i in range(len(MOMENTS)):
             ax = fig.add_subplot(2,2,i+1)
             ax.hist(sims[:,i], bins=bins, normed=normed, color=c[i])
             ax.axvline(x=data[i], color='k', ls='--')
-            ax.set_xlabel(titles[i])
+            ax.set_xlabel(MOMENTS[i])
             ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
         fig.tight_layout()
     
@@ -339,7 +319,7 @@ class StatsMap(tcs.TempMap):
         
         if plot:
             fig = plt.figure()
-            for i in range(len(titles)):
+            for i in range(len(MOMENTS)):
                 ax = fig.add_subplot(2,2,i+1)
                 ax.plot(apertures, simsAvg[i], 'k--')
                 ax.plot(apertures, data[i], 'rx')
@@ -348,13 +328,14 @@ class StatsMap(tcs.TempMap):
                 ax.fill_between(apertures, simsAvg[i] - 2*simsStd[i],
                   simsAvg[i] + 2*simsStd[i], alpha=0.2, facecolor='slategrey')
                 ax.set_xlabel(r'Aperture (deg)')
-                ax.set_ylabel(titles[i])
+                ax.set_ylabel(MOMENTS[i])
                 ax.yaxis.get_major_formatter().set_powerlimits((0, 1))
             fig.tight_layout()
         
         self.set_R(Rf)
         return np.dstack((data, simsAvg, simsStd))
 
+# !!!
 def lonlat2colatlon(coord):
     '''
     - coord: tuple in form (longitude, latitude)
@@ -486,7 +467,30 @@ def testMask(self, Mbd, Nbd): # Tests mask
     filtMap = hp.ma(filtMap)
     hp.mollview(filtMap, title='Filtered CMB T', cbar=True, unit=r'$K$')
     return self.mask, c
+
+
+def filtMask(self, Mbd=0.9):
+    """
+    Applies mask on selected pixels AFTER calculations have been performed.
+    - Mbd: Only pixels of mask value >Mbd are considered before filtering
+    (Zung, Huterer, 2010)
+    """
+    cb, lon = hp.pix2ang(self.res, np.arange(self.map.size))
+    lmax = self.ELL.max()
     
+    mask = np.zeros(self.mask.size, dtype=float)
+    mask[self.mask>Mbd] = self.mask[self.mask>Mbd]
+    mlm = hp.map2alm(mask)
+    
+    R = np.radians(self.R)
+    W = mexHat(R, cb)
+    
+    wwlm = hp.map2alm(W*W)[:lmax+1]
+    ellFac = np.sqrt(4*np.pi/(2.*np.arange(lmax+1)+1))
+    fl = ellFac*np.conj(wwlm)
+    
+    convAlm = hp.almxfl(alm=mlm, fl=fl)
+    newmask = hp.alm2map(convAlm, nside=self.res, pol=False, verbose=False)
 '''
 
 
