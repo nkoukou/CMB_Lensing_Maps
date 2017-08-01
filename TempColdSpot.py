@@ -180,14 +180,15 @@ class TempMap(object):
             self._write(res, Map=True, Mask=True)
     
     # Map methods
-    def allPixs(self, mode='p'):
+    def findPixs(self, idxs=None, mode='p'):
         '''
         Returns all indices of pixels of the map. Parameter mode can be:
           - 'p': returns indices of pixels
           - 'v': returns Cartesian unit vectors instead
           - 'a': returns colatitude-longitude instead 
         '''
-        idxs = np.arange(self.map.size)
+        if idxs is None: idxs = np.arange(self.map.size)
+        
         if mode=='p':
             pixs = idxs
         elif mode=='v':
@@ -197,6 +198,7 @@ class TempMap(object):
             pixs = hp.pix2ang(self.res, idxs)
         else:
             raise ValueError("Mode can be 'p', 'v' or 'a'")
+        
         return pixs
     
     def plotMap(self, mask=False):
@@ -225,7 +227,7 @@ class TempMap(object):
         cls = 2*np.pi/(ell*(ell+1)) * cls #!!! Correction (must be correct)
         
         sim = hp.synfast(cls, self.res, alm=False, pol=False, pixwin=False,
-                         fwhm=BEAM, sigma=None, verbose=False)
+                         fwhm=FWHM[self.res], sigma=None, verbose=False)
 
         #Convert uK to K
         sim = 1e-6 * sim
