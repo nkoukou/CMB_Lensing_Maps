@@ -5,12 +5,12 @@ import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
+import os.path
 
 # Global constants and functions
-DIR = 'CMBT_Maps/n'
+STR = lambda res: str(res).zfill(4)
 
-STR4 = lambda res: str(res).zfill(4)
-STR2 = lambda res: str(res).zfill(2)
+###
 
 def mexHat(R, cb): # !!! currently only depends on scale
     '''
@@ -31,6 +31,98 @@ def mexHat(R, cb): # !!! currently only depends on scale
     
     return W
 
+def filterMap(MAP, lmax, scale, mask=False, sim=False):
+    MAP.lmax = lmax
+    R = np.radians(scale)
+    if sim:
+        Map = MAP.sim
+        mlm = hp.map2alm(Map, lmax=lmax)
+    else:
+        Map = MAP.map
+        mlm = MAP.alm
+    
+    cb = MAP.cb
+    W = mexHat(R, cb)
+    wlm = hp.map2alm(W, lmax=lmax, mmax=0)
+    
+    ellFac = np.sqrt(4*np.pi/(2.*np.arange(lmax+1)+1))
+    fl = ellFac * np.conj(wlm)
+    convAlm = hp.almxfl(alm=mlm, fl=fl)
+    
+    newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
+    
+    if mask:
+        fmask = MAP.dir+STR(MAP.res)+'e_fmask'+STR(60*scale)+'.npy'
+        if os.path.isfile(fmask):
+            newmask = np.load(fmask)
+        else:
+            newmask = filterMask(MAP, scale, cbbd=10)
+        newmap = (newmap, newmask)
+    return newmap
+
+def filterMask(MAP, scale, cbbd=10):
+    '''
+    Filters mask according to Planck 2013 XXIII section 4.5.
+    # !!! Separate GalPlane from PointSources first in Nside=2048, then 
+    degrade to 1024 then follow procedure. m2 is not working
+    '''
+    R = np.radians(scale)
+        
+    # Check res and degrades to immediate lower resolution
+    MAP.set_res(MAP.res/2)
+    cb, lon =  MAP.cb, MAP.lon
+    
+    aux = np.copy(MAP.mask)
+    
+            
+    # Isolate Galactic plane
+    bdu, bdd = np.radians(90-cbbd), np.radians(90+cbbd)
+    
+    cbu, lonu = cb[cb<bdu], lon[cb<bdu]
+    cbd, lond = cb[cb>bdd], lon[cb>bdd]
+    
+    pixsu = hp.ang2pix(MAP.res, cbu, lonu)
+    pixsd = hp.ang2pix(MAP.res, cbd, lond)
+    
+    aux[pixsu] = aux[pixsd] = 1
+    
+    # Find and extend boundaries by twice the aperture
+    m1 = np.copy(aux)
+    
+    for pix in np.where(m1==0)[0]:
+        if 1 not in m1[hp.get_all_neighbours(MAP.res, pix)]:
+            continue
+        vec = hp.pix2vec(MAP.res, pix)
+        pixs = hp.query_disc(MAP.res, vec, 2*R)
+        m1[pixs] = 0
+    
+    # Convolve with SMHW
+    '''
+    m2 = np.copy(aux)
+    mlm = hp.map2alm(m2, lmax=MAP.lmax)
+    
+    W = mexHat(R, CB)
+    wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
+    fl = self.ellFac*np.conj(wlm)
+    
+    convAlm = hp.almxfl(alm=mlm, fl=fl)
+    m2 = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
+    m2[m2<0.1] = 0
+    m2[m2>=0.1] = 1
+    '''
+    
+    m = m1 #*m2
+
+    res = 2*MAP.res
+    m = hp.ud_grade(m, res, power=0)
+    MAP.set_res(res)
+    
+    np.save(MAP.dir+STR(MAP.res)+'e_fmask'+STR(60*scale), MAP.mask * m)
+    
+    return MAP.mask * m
+
+"""
+
 
 class FilterMap(object):
     '''
@@ -45,15 +137,26 @@ class FilterMap(object):
         self.R = np.radians(scale)
         self.a = coef
         
-        self.cb = np.load(DIR+STR4(res)+'e_cb.npy')
-        self.cb = np.load(DIR+STR4(res)+'e_lon.npy')
-        self.wlm = np.load(DIR+STR4(res)+'e_wlm'+STR2(scale)+'.npy')
+        cb, lon = hp.pix2ang(res, np.arange(hp.nside2npix(res)))
+        self.cb = cb
+        self.lon = lon
+        W = mexHat(self.R, self.cb)
+        self.wlm = hp.map2alm(W, lmax=self.lmax, mmax=0)
         self.ellFac = np.sqrt(4*np.pi/(2.*np.arange(self.lmax+1)+1))
+        self.fl = self.ellFac * np.conj(self.wlm)
+    
+    def set_res(self, res):
+        self.res = res
+        cb, lon = hp.pix2ang(res, np.arange(hp.nside2npix(res)))
+        self.cb = cb
+        self.lon = lon
+        W = mexHat(self.R, self.cb)
+        self.wlm = hp.map2alm(W, lmax=self.lmax, mmax=0)
         self.fl = self.ellFac * np.conj(self.wlm)
     
     def set_R(self, R):
         self.R = np.radians(R)
-        W = mexHat(R, self.cb)
+        W = mexHat(self.R, self.cb)
         self.wlm = hp.map2alm(W, lmax=self.lmax, mmax=0)
         self.fl = self.ellFac * np.conj(self.wlm)
     
@@ -135,7 +238,7 @@ class FilterMap(object):
         MAP.set_res(res)
         
         if write:
-            np.save(MAP.dir+STR(MAP.res)+'e_fmask', MAP.mask * m)
+            np.save(DIR+STR(MAP.res)+'e_fmask', MAP.mask * m)
         
         return MAP.mask * m
         
@@ -153,11 +256,7 @@ class FilterMap(object):
             Map = hp.ma(Map)
         hp.mollview(Map, title='Filtered CMB T (scale={0:.1f} deg)'.format(
         np.rad2deg(self.R)), cbar=True, unit=r'$K$')
-
-
-
-
-
+"""
 
 
 

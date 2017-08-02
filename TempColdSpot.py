@@ -50,26 +50,31 @@ class TempMap(object):
             print('MAP')
             self.alm = hp.read_alm(self.dir+STR(res)+'_alm.fits')
             print('ALM')
-            self.cl = hp.read_cl(self.dir+STR(res)+'_cl.fits')
-            print('CL')
+            #self.cl = hp.read_cl(self.dir+STR(res)+'_cl.fits')
+            #print('CL')
             
             self.mask=hp.read_map(self.dir+STR(res)+'_mask.fits', verbose=False)
             print('MASK')
-            self.malm = hp.read_alm(self.dir+STR(res)+'_malm.fits')
-            print('MALM')
-            self.mcl = hp.read_cl(self.dir+STR(res)+'_mcl.fits')
-            print('MCL')
+            #self.malm = hp.read_alm(self.dir+STR(res)+'_malm.fits')
+            #print('MALM')
+            #self.mcl = hp.read_cl(self.dir+STR(res)+'_mcl.fits')
+            #print('MCL')
             
             self.res = res
             
         else:
             raise ValueError('Resolution (Nside) must be a power of 2')
         
+        self.cb = np.load(self.dir+STR(res)+'e_cb.npy')
+        self.lon = np.load(self.dir+STR(res)+'e_lon.npy')
+        
         self.lmax = LMAX(self.res)
-        lm = hp.Alm.getlm(self.lmax)
-        print('LM')
-        self.ELL = lm[0]
-        self.EM = lm[1]
+        #lm = hp.Alm.getlm(self.lmax)
+        #print('LM')
+        #self.ELL = lm[0]
+        #self.EM = lm[1]
+        
+        self.sim = None
         
         if not os.path.isfile(self.dir+str(NSIDES[-1])+'_map.fits'):
             res = NSIDES[-1]
@@ -239,7 +244,7 @@ class TempMap(object):
                 Map = hp.ma(Map)
             hp.mollview(Map, coord='G', title='Simulated CMB T', cbar=True,
                         unit=r'$K$')
-        return sim
+        self.sim = sim
 
 
 
