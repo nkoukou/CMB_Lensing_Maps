@@ -24,12 +24,11 @@ class LensingMap(object):
         - klm: spherical harmonic coefficients of lensing convergence kappa #!!! units?
         - rawSpec: approximate noise and signal+noise power spectra of kappa #!!! units?
         '''
-        try:
-            self.mask = hp.read_map('data/mask.fits')
-            self.klm = hp.read_alm('data/dat_klm.fits')
-            self.rawSpec = np.loadtxt('data/nlkk.dat')
-        except:
-            print('Files are not in expected directory')
+        self.dir = 'CMBL_Maps/'
+        
+        self.mask = hp.read_map(self.dir+'data/mask.fits')
+        self.klm = hp.read_alm(self.dir+'data/dat_klm.fits')
+        self.rawSpec = np.loadtxt(self.dir+'data/nlkk.dat')
             
         self.NSIDE = 2048 # !!! refer to header/readme
         lm = hp.Alm.getlm(self.NSIDE)

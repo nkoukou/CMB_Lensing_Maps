@@ -32,11 +32,11 @@ class TempMap(object):
     '''
     def __init__(self, res=None):
         '''
-        Read the temperature map of given resolution from expected directory. 
-        If res=None, the original fits file is read with resolution 2048. Then, 
+        Reads the temperature map of given resolution from expected directory. 
+        If res=None, the original .fits file is read with resolution 2048. Then,
         all necessary secondary data are also loaded (e.g. mask).
         '''
-        self._overwrite = 1
+        self._overwrite = 0
         self.dir = 'CMBT_Maps/n'
         self.hdu = ap.io.fits.open(DIRMAP)
         

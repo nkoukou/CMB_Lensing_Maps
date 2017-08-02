@@ -5,7 +5,6 @@ import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
-from importlib import reload #!!!
 import TempColdSpot as tcs
 from MapFilts import filterMap
 
@@ -13,7 +12,8 @@ from MapFilts import filterMap
 MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered 
                                                        #in the analysis
 LMAX = 80
-MAP = tcs.TempMap(128)
+
+MAP = tcs.TempMap(256)
 
 ###
 
@@ -55,9 +55,10 @@ def getDisk(centre, radius, mask):
     Returns pixels within the disk of given centre on any map, excluding 
     the boundaries. Only unmasked pixels by given mask are returned.
     '''
+    R = np.radians(radius)
     cb, lon = centre
     VEC = hp.ang2vec(cb, lon, lonlat=False)
-    pixs = hp.query_disc(MAP.res, vec=VEC, radius=radius, inclusive=False)
+    pixs = hp.query_disc(MAP.res, vec=VEC, radius=R, inclusive=False)
     pixs = pixs[np.where(mask[pixs]==1.)]
     return pixs
 
@@ -180,7 +181,7 @@ def compareFilteredTemp(radius, nsims=100, plot=True):
 def compareFilteredSims(radius, nsims=100, plot=True, bins=10, normed=False):
     '''
     Calculates moments of real map and of nsims in number simulations.
-    Moments are based on disk averages. !!! test if CS in sims has mean<0
+    Moments are based on disk averages.
     '''
     data, mask = filterMap(MAP, LMAX, radius, mask=True)
     coord = lonlat2colatlon(tcs.COORDCS)

@@ -12,7 +12,7 @@ STR = lambda res: str(res).zfill(4)
 
 ###
 
-def mexHat(R, cb): # !!! currently only depends on scale
+def mexHat(R, cb):
     '''
     Computes SMHW function for scale R and array of co-latitudes cb.
     '''
@@ -56,11 +56,11 @@ def filterMap(MAP, lmax, scale, mask=False, sim=False):
         if os.path.isfile(fmask):
             newmask = np.load(fmask)
         else:
-            newmask = filterMask(MAP, scale, cbbd=10)
+            newmask = _filterMask(MAP, scale, cbbd=10)
         newmap = (newmap, newmask)
     return newmap
 
-def filterMask(MAP, scale, cbbd=10):
+def _filterMask(MAP, scale, cbbd=10):
     '''
     Filters mask according to Planck 2013 XXIII section 4.5.
     # !!! Separate GalPlane from PointSources first in Nside=2048, then 
@@ -121,6 +121,14 @@ def filterMask(MAP, scale, cbbd=10):
     
     return MAP.mask * m
 
+def plotMap(fmap, fmask, R):
+    res = hp.npix2nside(fmap.size)
+    fmap[fmask==0.] = hp.UNSEEN
+    fmap = hp.ma(fmap)
+    
+    hp.mollview(fmap, title = r'Nside = {0}, scale = {1} deg'.format(res, R))
+    plt.show()
+    
 """
 
 
