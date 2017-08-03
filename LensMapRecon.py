@@ -1,45 +1,191 @@
 """
 Reconstruction of CMB Lensing Map from Planck 2015 data release.
 
-beam fwhm = 0.00145444 rad (5') ->
-five lensing potential estimators (Okamoto & Hu) ->
-
+!!! FIX:
+- plot spectrum method, is spectrum invariant under downgrading?
+- fix mask filtering
+- simulations
+- docstrings
+- test stats
 """
 import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
 
+# Global constants and functions
+DIR_MASKGAL = 'CMBL_Maps/HFI_Mask_GalPlane-apo0_2048_R2.00.fits'
+
+NSIDES = [2**x for x in range(4, 12)]
+
+BEAM = 5./60 * np.pi/180 #radians
+FWHM = {};
+for nside in NSIDES: FWHM[nside] = BEAM * (2048/nside) #radians
+
+LMAX = lambda res: res
+STR = lambda res: str(res).zfill(4)
+
+###
+
 class LensingMap(object):
     """
     Represents the CMB Lensing Map of the Planck 2015 data release (ref. Planck
     2015 results XV. Gravitational lensing).
     """
-    def __init__(self):
-        '''
-        Checks for Planck data at the expected directory ('/home2/nkoukou/data')
-        and then imports:
-        
+    def __init__(self, res=None):
+        '''        
         - mask: lensing potential map mask #!!! reference
-        - klm: spherical harmonic coefficients of lensing convergence kappa #!!! units?
-        - rawSpec: approximate noise and signal+noise power spectra of kappa #!!! units?
+        - klm: spherical harmonic coefficients of lensing convergence kappa
+        - rawSpec: approximate noise and signal+noise power spectra of kappa
         '''
         self.dir = 'CMBL_Maps/'
+        rawSpec = np.loadtxt(self.dir+'nlkk.dat')
         
-        self.mask = hp.read_map(self.dir+'data/mask.fits')
-        self.klm = hp.read_alm(self.dir+'data/dat_klm.fits')
-        self.rawSpec = np.loadtxt(self.dir+'data/nlkk.dat')
+        if res==None:
+            self.mask = hp.read_map(self.dir+'mask.fits', verbose=False)
+            self.malm = hp.map2alm(self.mask)
+            print('MASK')
+            self.maskGal = hp.read_map(DIR_MASKGAL, field=3, verbose=False)
+            self.malmGal = hp.map2alm(self.maskGal)
+            print('MASKGAL')
             
-        self.NSIDE = 2048 # !!! refer to header/readme
-        lm = hp.Alm.getlm(self.NSIDE)
-        self.ELL = lm[0]
-        self.EM = lm[1]
+            self.res = hp.npix2nside(self.mask.size)
+            self.lmax = LMAX(self.res)
+            
+            self.klm = hp.read_alm(self.dir+'dat_klm.fits')
+            self.kmap = hp.alm2map(self.klm, self.res, verbose=False)
+            print('KMAP')
+            
+            self.nlkk = rawSpec[:self.lmax+2,1]
+            self.clkk = rawSpec[:self.lmax+2,2] - rawSpec[:self.lmax+2,1]
+            
+            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
+            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+            self.flm = hp.almxfl(self.klm, fl)
+            self.fmap = hp.alm2map(self.flm, self.res, verbose=False)
+            self.clff = fl**2 * self.clkk
+            print('FMAP')
+            
+        elif res in NSIDES:
+            core = self.dir + 'data/n' + STR(res)
+            self.res = res
+            self.lmax = LMAX(res)
+            
+            self.nlkk = rawSpec[:self.lmax+1,1]
+            self.clkk = rawSpec[:self.lmax+1,2] - rawSpec[:self.lmax+1,1]
+            
+            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
+            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+            self.clff = fl**2 * self.clkk
+            print('KMAP')
+            self.kmap = hp.read_map(core+'_kmap.fits', verbose=False)
+            self.klm = hp.read_alm(core+'_klm.fits')
+            print('KMAP -> FMAP')
+            
+            self.fmap = hp.read_map(core+'_fmap.fits', verbose=False)
+            self.flm = hp.read_alm(core+'_flm.fits')
+            print('FMAP -> MASK')
+            
+            self.mask = hp.read_map(core+'_mask.fits', verbose=False)
+            self.malm = hp.read_alm(core+'_malm.fits')
+            print('MASK -> MASKGAL')
+            
+            self.maskGal = hp.read_map(core+'_maskGal.fits', verbose=False)
+            self.malmGal = hp.read_alm(core+'_malmGal.fits')
+            
+            self.sim = None
+            
+        else:
+            raise ValueError('Resolution (Nside) must be a power of 2')
+    
+    def set_res(self, res):
+        '''
+        Resets object with new resolution.
+        '''
+        self.__init__(int(res))
         
-        self.map = None
-        self.flm = None
-        self.clkk = None
-        self.clff = None
-        self.nlkk = None
+    def _lowRes(self, res, bd=0.9):
+        lmax = LMAX(res)
+        beam0 = hp.gauss_beam(FWHM[self.res], lmax)
+        pixw0 = hp.pixwin(self.res)[:lmax+1]
+        beam = hp.gauss_beam(FWHM[res], lmax)
+        pixw = hp.pixwin(res)[:lmax+1]
+        fl = (beam*pixw)/(beam0*pixw0)
+        
+        self.klm = hp.almxfl(self.klm, fl)
+        self.flm = hp.almxfl(self.flm, fl)
+        self.malm = hp.almxfl(self.malm, fl)
+        self.malmGal = hp.almxfl(self.malmGal, fl)
+            
+        lowkmap = hp.alm2map(self.klm, res, verbose=False)
+        lowfmap = hp.alm2map(self.flm, res, verbose=False)
+        lowmask = hp.alm2map(self.malm, res, verbose=False)
+        lowmaskGal = hp.alm2map(self.malmGal, res, verbose=False)
+        lowmask[lowmask<bd] = 0
+        lowmask[lowmask>=bd] = 1
+        lowmaskGal[lowmaskGal<bd] = 0
+        lowmaskGal[lowmaskGal>=bd] = 1
+        
+        self.kmap = lowkmap
+        self.fmap = lowfmap
+        self.mask = lowmask
+        self.maskGal = lowmaskGal
+    
+    def _write(self, res):
+        core = self.dir + 'data/n' + STR(res)
+        if res!=2048: self._lowRes(res)
+        
+        hp.write_map(core+'_kmap.fits', self.kmap, nest=False)
+        hp.write_alm(core+'_klm.fits', self.klm)
+        
+        hp.write_map(core+'_fmap.fits', self.fmap, nest=False)
+        hp.write_alm(core+'_flm.fits', self.flm)
+        
+        hp.write_map(core+'_mask.fits', self.mask, nest=False)
+        hp.write_alm(core+'_malm.fits', self.malm)
+        
+        hp.write_map(core+'_maskGal.fits', self.maskGal, nest=False)
+        hp.write_alm(core+'_malmGal.fits', self.malmGal)
+    
+    def _writeAll(self):
+        for res in NSIDES[:-1]:
+            print(res)
+            self.set_res(NSIDES[-1])
+            self._write(res)
+    
+    def plotMap(self, phi=True, mask=False):
+        '''
+        Plots map including mask if True.
+        '''
+        if phi:
+            Map = np.copy(self.fmap)
+            title = r'Lensing potential $\phi$'
+        else:
+            Map = np.copy(self.kmap)
+            title = r'Lensing convergence $\kappa$'
+        if mask:
+            Map[self.mask==0.] = hp.UNSEEN
+            Map = hp.ma(Map)
+        hp.mollview(Map, coord='G', title=title, cbar=True, 
+                    unit=r'dimensionless')
+    
+    def genSim(self, lmax=None, plot=False, mask=False):
+        '''
+        Generates a simulation !!!
+        '''
+        sim = None
+        
+        if plot:
+            Map = np.copy(sim)
+            if mask:
+                Map[self.mask==0.] = hp.UNSEEN
+                Map = hp.ma(Map)
+            hp.mollview(Map, coord='G', title='Simulated phi or kapa', 
+                        cbar=True, unit=r'dimensionless')
+        self.sim = sim
+        
+"""
+Possible additional methods:
 
     def lensingMap(self, phi=True, plot=True):
         '''
@@ -49,21 +195,14 @@ class LensingMap(object):
                convergence kappa
         - plot: if True, also plots data on a map with Mollweide projection
         '''
-        if phi:
-            flm = 2./(self.ELL[1:]*(self.ELL[1:]+1.))*self.klm[1:]
-            flm = np.concatenate((np.array([0]), flm)) #!!! purify division by 0
-            Map = hp.alm2map(flm, nside=self.NSIDE)
-            title = r'Lensing potential $\phi$'
-            self.flm = flm
-        elif not phi:
-            Map = hp.alm2map(self.klm, nside=self.NSIDE)
-            title = r'Lensing convergence $\kappa$'
+        Map = self.klm
         
         if plot:
+            title = r'Lensing convergence $\kappa$'
             Plot = Map
             Plot[self.mask==0.] = hp.UNSEEN
             Plot = hp.ma(Plot)
-            hp.mollview(Map, title=title, cbar=True, unit='dimensionless?')
+            hp.mollview(Map, title=title, cbar=True, unit='no units') #Weyl Psi
         
         self.map = Map
         return Map
@@ -74,17 +213,11 @@ class LensingMap(object):
         
         - plot: if True, also plots the spectrum
         #!!! add error bars (aggressive binning)
-        '''
-        ell = self.rawSpec[:,0]
-        nlkk = self.rawSpec[:,1]
-        clkk = self.rawSpec[:,2] - self.rawSpec[:,1]
-        self.clkk = np.concatenate((np.zeros(8), clkk))
-        self.nlkk = np.concatenate((np.zeros(8), nlkk))
-        
+        '''        
         if plot:
-            y = 2./np.pi * 1e7 * clkk
+            y = 2./np.pi * 1e7 * self.clkk
             fig = plt.figure()
-            ax = fig.add_subplot(211)
+            ax = fig.add_subplot(111)
             ax.semilogx(ell, y)
             ax.set_xlabel(r'$L$')  
             ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi} C_L^{\phi \phi}\ [\times 10^7]$')
@@ -113,10 +246,6 @@ class LensingMap(object):
             self.powerSpectrum(plot=False)
             cl = self.clkk
         return cl
-                
-"""
-Possible additional methods:
-
 
 NSIDE = 2048
 
