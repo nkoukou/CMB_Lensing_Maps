@@ -1,5 +1,6 @@
 '''
-Analyses Cold Spot statistics.
+Analyses Cold Spot statistics. As of this version, the module applies on 
+Lensing Maps.
 '''
 import numpy as np
 import astropy as ap

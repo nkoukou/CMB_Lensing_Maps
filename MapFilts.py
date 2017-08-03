@@ -1,5 +1,10 @@
 '''
 Includes the filters used to analyse map statistics.
+
+As of this version, the module applies on Lensing Maps (MAP has methods kmap, 
+klm instead of map, alm as well as maskGal which affects the isolation of the 
+Galactic plane step in _filterMask; refer to earlier verisons of the module for
+application on temperature maps - with the TempColdSpot.py module).
 '''
 import numpy as np
 import astropy as ap
@@ -8,7 +13,7 @@ import matplotlib.pylab as plt
 import os.path
 
 # Global constants and functions
-STR = lambda res: str(res).zfill(4)
+STR = lambda res: str(int(res)).zfill(4)
 
 ###
 
@@ -32,45 +37,50 @@ def mexHat(R, cb):
     return W
 
 def filterMap(MAP, lmax, scale, mask=False, sim=False):
+    '''
+    Filters map at given scale, considering ell components up to given lmax.
+    
+    If mask=True, returns filtered mask as well.
+    If sim=True, filters simulation MAP.sim instead of the real data.
+    '''
     MAP.lmax = lmax
     R = np.radians(scale)
     if sim:
         Map = MAP.sim
-        mlm = hp.map2alm(Map, lmax=lmax)
+        mlm = hp.map2alm(Map, lmax=MAP.lmax)
     else:
-        Map = MAP.map
-        mlm = MAP.alm
+        Map = MAP.kmap
+        mlm = MAP.klm
     
-    cb = MAP.cb
-    W = mexHat(R, cb)
-    wlm = hp.map2alm(W, lmax=lmax, mmax=0)
+    W = mexHat(R, MAP.cb)
+    wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
     
-    ellFac = np.sqrt(4*np.pi/(2.*np.arange(lmax+1)+1))
+    ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
     fl = ellFac * np.conj(wlm)
     convAlm = hp.almxfl(alm=mlm, fl=fl)
     
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
-        fmask = MAP.dir+STR(MAP.res)+'e_fmask'+STR(60*scale)+'.npy'
+        fmask = MAP.core+'_maskFilt'+STR(60*scale)+'.npy'
         if os.path.isfile(fmask):
             newmask = np.load(fmask)
         else:
-            newmask = _filterMask(MAP, scale, cbbd=10)
+            newmask = _filterMask(MAP, scale, W, ellFac)
         newmap = (newmap, newmask)
     return newmap
 
-def _filterMask(MAP, scale, cbbd=10):
+def _filterMask(MAP, scale, W, ellFac):
     '''
-    Filters mask according to Planck 2013 XXIII section 4.5.
-    # !!! Separate GalPlane from PointSources first in Nside=2048, then 
-    degrade to 1024 then follow procedure. m2 is not working
+    Filters mask at given scale according to Planck 2013 XXIII (section 4.5).
+    
+    Degrading is not performed because it has little effect on efficiency and 
+    results, and thus takes W and ellFac from filterMap() to improve efficiency.
     '''
     R = np.radians(scale)
         
-    # Degrade to immediately lower resolution
-    MAP.set_res(MAP.res/2)
-    cb, lon =  MAP.cb, MAP.lon
+    # Degrade to immediately lower resolution !!! not done currently
+    #MAP.set_res(MAP.res/2)
     
     # Isolate Galactic plane
     aux = np.copy(MAP.maskGal)
@@ -80,38 +90,40 @@ def _filterMask(MAP, scale, cbbd=10):
     
     for pix in np.where(m1==0)[0]:
         if 1 not in m1[hp.get_all_neighbours(MAP.res, pix)]:
-            #perhaps faster to apply to all pixs
             continue
         vec = hp.pix2vec(MAP.res, pix)
         pixs = hp.query_disc(MAP.res, vec, 2*R)
         m1[pixs] = 0
     
     # Convolve with SMHW
-    '''
     m2 = np.copy(aux)
     mlm = hp.map2alm(m2, lmax=MAP.lmax)
     
-    W = mexHat(R, CB)
-    wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
-    fl = self.ellFac*np.conj(wlm)
-    
+    wwlm = hp.map2alm(W*W, lmax=MAP.lmax, mmax=0)
+    fl = ellFac * np.conj(wwlm)
     convAlm = hp.almxfl(alm=mlm, fl=fl)
+    
     m2 = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     m2[m2<0.1] = 0
     m2[m2>=0.1] = 1
-    '''
     
-    m = m1 #*m2
+    # Multiply all masks together
+    m = m2 * m1
 
-    res = 2*MAP.res
-    m = hp.ud_grade(m, res, power=0)
-    MAP.set_res(res)
+    #res = 2*MAP.res #!!! No degrading
+    #m = hp.ud_grade(m, res, power=0) #!!! better upgrade method
+    #MAP.set_res(res)
     
-    np.save(MAP.dir+STR(MAP.res)+'e_fmask'+STR(60*scale), MAP.mask * m)
+    newmask = MAP.mask * m
     
-    return MAP.mask * m
+    np.save(MAP.core+'_maskFilt'+STR(60*scale), MAP.mask * m)
+    return newmask
 
 def plotMap(fmap, fmask, R):
+    '''
+    Plots given map with given mask. Both must have already been filtered at 
+    scale R.
+    '''
     res = hp.npix2nside(fmap.size)
     
     Map = np.copy(fmap)
