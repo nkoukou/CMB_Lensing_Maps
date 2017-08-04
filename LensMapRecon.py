@@ -190,9 +190,10 @@ class LensingMap(object):
         ax.set_xlabel(r'$L$')  
         ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
     
-    def loadSim(self, n, phi=False, plot=False, mask=False):
+    def loadSim(self, n=0, phi=False, plot=False, mask=False):
         '''
-        Loads a simulation !!!only in res=2048
+        Loads a simulation !!!only in res=2048, how do sim_lm give rise to 0 values
+        in the area covered by mask??
         '''
         if self.res!=2048: raise ValueError('!!!only in res=2048')
         

@@ -1,5 +1,5 @@
 '''
-Analyses Cold Spot statistics. As of this version, the module applies on 
+Analyses Cold Spot statistics. As of this commit 14, the module applies on 
 Lensing Maps.
 
 !!! comments
@@ -8,15 +8,13 @@ import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
-import TempColdSpot as tcs
 from MapFilts import filterMap
+import LensMapRecon as lmr
 
 # Global constants and functions
 MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered 
                                                        #in the analysis
-LMAX = 80
-
-#MAP = tcs.TempMap(256)
+#MAP = lmr.LensingMap(2048)
 
 ###
 
@@ -31,8 +29,8 @@ def lonlat2colatlon(coord):
 
 def colatlon2lonlat(coord):
     '''
-    - coord: tuple in form (longitude, latitude)
-    Returns tuple in form (colatitude, longitude)
+    - coord: tuple in form (colatitude, longitude)
+    Returns tuple in form (longitude, latitude)
     '''
     cb, lon = coord
     lon, lat = np.rad2deg(lon), 90-np.rad2deg(cb)
@@ -47,7 +45,7 @@ def colatlon2lonlat(coord):
 def detectCS(Map, mask):
     '''
     Returns coordinates of coldest spot on given map. Coldest is defined by 
-    lowest temperature.
+    lowest filtered temperature.
     '''
     pix = np.where(Map==Map[mask==1].min())[0][0]
     coord = hp.pix2ang(nside=MAP.res, ipix=pix)
@@ -55,8 +53,8 @@ def detectCS(Map, mask):
 
 def getDisk(centre, radius, mask):
     '''
-    Returns pixels within the disk of given centre on any map, excluding 
-    the boundaries. Only unmasked pixels by given mask are returned.
+    Returns pixels within the disk of given centre and radius on any map, 
+    excluding the boundaries. Only unmasked pixels by given mask are returned.
     '''
     R = np.radians(radius)
     cb, lon = centre
@@ -90,7 +88,7 @@ def chooseSims(radius, nsims=100, plot=True):
     
     temps = []
     moments = np.zeros((4, nsims+1))
-    moments[:,0] = calcStats(coord, radius, MAP.map, MAP.mask)
+    moments[:,0] = calcStats(coord, radius, MAP.kmap, MAP.mask)
     count = 1
     while len(temps)<nsims:
         if count%10==0: print(count)
