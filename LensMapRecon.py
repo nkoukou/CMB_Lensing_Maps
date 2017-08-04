@@ -1,9 +1,5 @@
 """
 Reconstruction of CMB Lensing Map from Planck 2015 data release.
-
-!!! FIX:
-- simulations
-- test stats
 """
 import numpy as np
 import astropy as ap
@@ -37,6 +33,7 @@ class LensingMap(object):
         '''
         self.dir = 'CMBL_Maps/'
         self.core = self.dir + 'data/n' + STR(res)
+        self.dirSim = self.dir + 'sims/obs_klms/'
         rawSpec = np.loadtxt(self.dir+'nlkk.dat')
         
         if res==None:
@@ -193,19 +190,29 @@ class LensingMap(object):
         ax.set_xlabel(r'$L$')  
         ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
     
-    def genSim(self, lmax=None, plot=False, mask=False):
+    def loadSim(self, n, phi=False, plot=False, mask=False):
         '''
-        Generates a simulation !!!
+        Loads a simulation !!!only in res=2048
         '''
-        sim = None
+        if self.res!=2048: raise ValueError('!!!only in res=2048')
+        
+        slm = hp.read_alm(self.dirSim+'sim_'+STR(n)+'_klm.fits')
+        if phi:
+            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
+            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+            slm = hp.almxfl(slm, fl)
+            title = r'Simulated lensing potential $\phi$'
+        else:
+            title = r'Simulated lensing convergence $\kappa$'
+        sim = hp.alm2map(slm, 2048, verbose=False)
         
         if plot:
             Map = np.copy(sim)
             if mask:
                 Map[self.mask==0.] = hp.UNSEEN
                 Map = hp.ma(Map)
-            hp.mollview(Map, coord='G', title='Simulated phi or kapa', 
-                        cbar=True, unit=r'dimensionless')
+            hp.mollview(Map, coord='G', title=title, cbar=True, 
+                        unit=r'dimensionless')
         self.sim = sim
 
 

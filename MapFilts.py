@@ -42,6 +42,8 @@ def filterMap(MAP, lmax, scale, mask=False, sim=False):
     
     If mask=True, returns filtered mask as well.
     If sim=True, filters simulation MAP.sim instead of the real data.
+    !!! perhaps save all sims created or create many sims over night - check 
+        space
     '''
     MAP.lmax = lmax
     R = np.radians(scale)
@@ -73,6 +75,7 @@ def filterMap(MAP, lmax, scale, mask=False, sim=False):
 def _filterMask(MAP, scale, W, ellFac):
     '''
     Filters mask at given scale according to Planck 2013 XXIII (section 4.5).
+    Similar to Zhang, Huterer 2010 in the convolution step.
     
     Degrading is not performed because it has little effect on efficiency and 
     results, and thus takes W and ellFac from filterMap() to improve efficiency.
