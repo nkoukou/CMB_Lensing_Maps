@@ -70,24 +70,32 @@ def plotMap(fmap, fmask, R):
     plt.show()
 
 # Filters
-def mexHat(R, cb):
+def A(R, a):
+    '''
+    Normalisation amplitude so that mexHat squared integrates to unit.
+    '''
+    RR = R*R
+    A = 1./np.sqrt(2*np.pi*RR*(a**3/8. + a**4/32. * RR + a**5/128. * RR*RR))
+    return A
+    
+def mexHat(R, a, cb):
     '''
     Computes SMHW function for scale R and array of co-latitudes cb.
     '''
     # Transformation of variable - ignores conventional factor of 2
-    y = np.tan(cb/2.)
+    y = 2*np.tan(cb/2.)
     
     # Squares
     yy = y*y
     RR = R*R
     
-    # Normalisation coefficient for square of wavelet
-    A = 1./np.sqrt(2*np.pi*RR*(1. + RR/2. + RR*RR/4.))
+    # Stereographic projection
+    J = (1. + yy/4.)*(1. + yy/4.)
     
     # Wavelet function
-    W = A * (1. + yy)*(1. + yy) * (2. - 4./RR * yy) * np.exp(-2./RR * yy)
+    W = A(R,a) * J * ( a - 1./RR * yy ) * np.exp( -1./(a*RR) * yy )
     
-    return W/(2*A)
+    return W
 
 # Helper function for map filtering
 def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
