@@ -3,6 +3,8 @@ Analyses Cold Spot statistics. As of this commit 14, the module applies on
 Lensing Maps.
 
 !!! comments
+ - What about spots half covered by mask? (maybe ignore discs with more than
+   half pixels covered?)
 '''
 import numpy as np
 import astropy as ap
@@ -14,9 +16,7 @@ import LensMapRecon as lmr
 # Global constants and functions
 MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered 
                                                        #in the analysis
-#MAP = lmr.LensingMap(2048)
-
-###
+MAP = lmr.LensingMap(2048)
 
 def lonlat2colatlon(coord):
     '''
@@ -41,6 +41,31 @@ def colatlon2lonlat(coord):
     return lon, lat
 
 ###
+
+# Lensing era stats
+
+def plotExtrema(Map, mask, thresh=3):
+    '''
+    Plotst map with only unmasked pixels the ones above thresh * map global std.
+    '''
+    newmap = np.copy(Map)
+    data = newmap[mask==1.]
+    sigma = data.std()
+    
+    newmask = np.zeros(newmap.size, float)
+    newmask[newmap<-thresh*sigma] = 1.
+    newmask[newmap>thresh*sigma] = 1.
+    newmask *=mask
+    
+    title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
+    
+    newmap[newmask==0.] = hp.UNSEEN
+    newmap = hp.ma(newmap)
+    hp.mollview(newmap, coord='G', title=title, cbar=True, unit='dimensionless')
+    
+    return np.vstack((np.where(newmask==1.)[0], newmap[newmask==1.]/sigma))
+
+# Temperature era stats
 
 def detectCS(Map, mask):
     '''
@@ -76,7 +101,7 @@ def calcStats(centre, radius, Map, mask):
     mean = 1./N * sample.sum()
     var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
     skew = 1./(N*var**3) * ((sample-mean)**3).sum()
-    kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3 
+    kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3
     
     return np.array([mean, var, skew, kur])
 
@@ -235,8 +260,6 @@ def calcArea(nsims=100, thresh=4, apertures=np.linspace(200, 300, 3)):
         allAreas[:,i,:] = areas
         i +=1
     return allAreas
-
-
 
 
 

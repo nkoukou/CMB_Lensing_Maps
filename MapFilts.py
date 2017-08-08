@@ -13,22 +13,22 @@ import matplotlib.pylab as plt
 import os.path
 
 # Global constants and functions
-STR = lambda res: str(int(res)).zfill(4)
+STR4 = lambda res: str(int(res)).zfill(4)
+STR2 = lambda res: str(int(res)).zfill(2)
 
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, lmax=None, mask=False, sim=False):
+def filterMap(MAP, scale, a, mask=False, sim=False, lmax=None):
     '''
     Filters map at given scale, considering ell components up to given lmax.
     
     If mask=True, returns filtered mask as well.
     If sim=True, filters simulation MAP.sim instead of the real data.
-    !!! perhaps save all sims created or create many sims over night - check 
-        space
     '''
     R = np.radians(scale)
     if lmax is not None:
+        temp = MAP.lmax
         MAP.lmax = lmax
     if sim:
         Map = MAP.sim
@@ -37,7 +37,7 @@ def filterMap(MAP, scale, lmax=None, mask=False, sim=False):
         Map = MAP.kmap
         mlm = MAP.klm
     
-    W = mexHat(R, MAP.cb)
+    W = mexHat(R, a, MAP.cb)
     wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
     
     ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
@@ -47,15 +47,17 @@ def filterMap(MAP, scale, lmax=None, mask=False, sim=False):
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
-        fmask = MAP.core+'_maskFilt'+STR(60*scale)+'.npy'
+        fmask = MAP.core+'_maskFilt'+STR4(60*scale)+STR2(2)+'.npy' #!!! a: same mask?
         if os.path.isfile(fmask):
             newmask = np.load(fmask)
         else:
             newmask = _filterMask(MAP, scale, W, ellFac)
         newmap = (newmap, newmask)
+    if lmax is not None:
+        MAP.lmax = temp
     return newmap
 
-def plotMap(fmap, fmask, R):
+def plotMap(fmap, fmask, R, a):
     '''
     Plots given map with given mask. Both must have already been filtered at 
     scale R.
@@ -66,13 +68,14 @@ def plotMap(fmap, fmask, R):
     Map[fmask==0.] = hp.UNSEEN
     Map = hp.ma(Map)
     
-    hp.mollview(Map, title = r'Nside = {0}, scale = {1} deg'.format(res, R))
-    plt.show()
+    hp.mollview(Map, title = r'Nside = {0}, scale = {1} deg, a = {2}'.format(
+                res, R, a))
+    #plt.show()
 
 # Filters
 def A(R, a):
     '''
-    Normalisation amplitude so that mexHat squared integrates to unit.
+    Normalisation amplitude so that mexHat squared integrates to unity.
     '''
     RR = R*R
     A = 1./np.sqrt(2*np.pi*RR*(a**3/8. + a**4/32. * RR + a**5/128. * RR*RR))
@@ -80,9 +83,9 @@ def A(R, a):
     
 def mexHat(R, a, cb):
     '''
-    Computes SMHW function for scale R and array of co-latitudes cb.
+    Computes SMHW function for scale R, parameter a and array of colatitudes cb.
     '''
-    # Transformation of variable - ignores conventional factor of 2
+    # Transformation of variable
     y = 2*np.tan(cb/2.)
     
     # Squares
@@ -95,9 +98,9 @@ def mexHat(R, a, cb):
     # Wavelet function
     W = A(R,a) * J * ( a - 1./RR * yy ) * np.exp( -1./(a*RR) * yy )
     
-    return W
+    return W #/(a*A(R,a))
 
-# Helper function for map filtering
+# Helper function for mask filtering
 def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
     '''
     Filters mask at given scale according to Planck 2013 XXIII (section 4.5).
@@ -108,7 +111,7 @@ def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
     '''
     R = np.radians(scale)
         
-    # Degrade to immediately lower resolution !!! not done currently
+    # Degrade to immediately lower resolution - No degrading currently
     #MAP.set_res(MAP.res/2)
     
     # Isolate Galactic plane
@@ -139,13 +142,13 @@ def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
     # Multiply all masks together
     m = m2 * m1
 
-    #res = 2*MAP.res #!!! No degrading
-    #m = hp.ud_grade(m, res, power=0) #!!! better upgrade method
+    #res = 2*MAP.res # No degrading currently
+    #m = hp.ud_grade(m, res, power=0) # !!!Can use better upgrade method
     #MAP.set_res(res)
     
     newmask = MAP.mask * m
     
-    np.save(MAP.core+'_maskFilt'+STR(60*scale), MAP.mask * m)
+    np.save(MAP.core+'_maskFilt'+STR4(60*scale), MAP.mask * m)
     return newmask
 
 
