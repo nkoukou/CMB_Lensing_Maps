@@ -92,7 +92,8 @@ class LensingMap(object):
             self.maskGal = hp.read_map(self.core+'_maskGal.fits', verbose=False)
             #self.malmGal = hp.read_alm(self.core+'_malmGal.fits')
             
-            self.sim = None
+            self.ksim = None
+            self.fsim = None
             
         else:
             raise ValueError('Resolution (Nside) must be a power of 2')
@@ -190,31 +191,31 @@ class LensingMap(object):
         ax.set_xlabel(r'$L$')  
         ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
     
-    def loadSim(self, n=0, phi=False, plot=False, mask=False):
+    def loadSim(self, n, plot=False, mask=True):
         '''
-        Loads a simulation !!!only in res=2048, how do sim_lm give rise to 0 values
-        in the area covered by mask??
+        Loads the n-th simulation in directory self.dirSim.
+        
+        !!!only in res=2048, how do sim_lm give rise to 0 values in the area 
+        covered by mask??
         '''
         if self.res!=2048: raise ValueError('!!!only in res=2048')
         
         slm = hp.read_alm(self.dirSim+'sim_'+STR(n)+'_klm.fits')
-        if phi:
-            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
-            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
-            slm = hp.almxfl(slm, fl)
-            title = r'Simulated lensing potential $\phi$'
-        else:
-            title = r'Simulated lensing convergence $\kappa$'
-        sim = hp.alm2map(slm, 2048, verbose=False)
+        self.ksim = hp.alm2map(slm, 2048, verbose=False)
+        
+        fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
+        fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+        slm = hp.almxfl(slm, fl)
+        self.fsim = hp.alm2map(slm, 2048, verbose=False)
         
         if plot:
-            Map = np.copy(sim)
+            Map = np.copy(self.fsim)
             if mask:
                 Map[self.mask==0.] = hp.UNSEEN
                 Map = hp.ma(Map)
+            title = r'Simulated lensing potential $\phi$'
             hp.mollview(Map, coord='G', title=title, cbar=True, 
                         unit=r'dimensionless')
-        self.sim = sim
 
 
 

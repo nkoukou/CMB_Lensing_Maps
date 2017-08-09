@@ -1,0 +1,21 @@
+# Directories
+Figures/*
+PapersCMB/*
+CMBT_Maps/*
+CMBL_Maps/*
+__pycache__/*
+
+# Cache
+*.pyc
+*.swo
+*.swp
+
+# Data
+*.fits
+
+*.txt
+*.dat
+
+*.pdf
+*.png
+*.jpg

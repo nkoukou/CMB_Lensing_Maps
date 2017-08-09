@@ -19,48 +19,62 @@ STR2 = lambda res: str(int(res)).zfill(2)
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, a, mask=False, sim=False, lmax=None):
+def filterMap(MAP, scale, a, phi, mask=False, sim=False, lmax=None):
     '''
-    Filters map at given scale, considering ell components up to given lmax.
+    Filters map at given scale, considering ell components up to given lmax. If 
+    lmax = None, the default lmax of the MAP is used.
     
     If mask=True, returns filtered mask as well.
     If sim=True, filters simulation MAP.sim instead of the real data.
+    
+    !!! same mask used regardless the value of parameter a
     '''
     R = np.radians(scale)
     if lmax is not None:
         temp = MAP.lmax
         MAP.lmax = lmax
-    if sim:
-        Map = MAP.sim
+    
+    if sim and phi:    
+        Map = MAP.fsim
         mlm = hp.map2alm(Map, lmax=MAP.lmax)
-    else:
+    elif sim and not phi:    
+        Map = MAP.ksim
+        mlm = hp.map2alm(Map, lmax=MAP.lmax)
+    elif not sim and phi:    
+        Map = MAP.fmap
+        mlm = MAP.flm
+    elif not sim and not phi:    
         Map = MAP.kmap
         mlm = MAP.klm
-    
+    else:
+        raise ValueError('Checl phi and sim arguments')
+    #print("Filt")
     W = mexHat(R, a, MAP.cb)
     wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
     
     ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
     fl = ellFac * np.conj(wlm)
     convAlm = hp.almxfl(alm=mlm, fl=fl)
-    
+    #print("Conv")
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
-        fmask = MAP.core+'_maskFilt'+STR4(60*scale)+STR2(2)+'.npy' #!!! a: same mask?
+        fmask = MAP.core+'_maskFilt'+STR4(60*scale)+'.npy'
         if os.path.isfile(fmask):
+            #print(1)
             newmask = np.load(fmask)
         else:
+            print(0)
             newmask = _filterMask(MAP, scale, W, ellFac)
         newmap = (newmap, newmask)
     if lmax is not None:
         MAP.lmax = temp
     return newmap
 
-def plotMap(fmap, fmask, R, a):
+def plotMap(fmap, fmask, scale, a):
     '''
     Plots given map with given mask. Both must have already been filtered at 
-    scale R.
+    given scale and a.
     '''
     res = hp.npix2nside(fmap.size)
     
@@ -69,7 +83,7 @@ def plotMap(fmap, fmask, R, a):
     Map = hp.ma(Map)
     
     hp.mollview(Map, title = r'Nside = {0}, scale = {1} deg, a = {2}'.format(
-                res, R, a))
+                res, scale, a))
     #plt.show()
 
 # Filters

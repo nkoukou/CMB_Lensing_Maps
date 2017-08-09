@@ -2,7 +2,8 @@
 Analyses Cold Spot statistics. As of this commit 14, the module applies on 
 Lensing Maps.
 
-!!! comments
+!!! comments (explain params, consistency with filtering, etc..)
+ - class inheriting from LensingMap for stats
  - What about spots half covered by mask? (maybe ignore discs with more than
    half pixels covered?)
 '''
@@ -14,9 +15,12 @@ from MapFilts import filterMap
 import LensMapRecon as lmr
 
 # Global constants and functions
-MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis') #All moments considered 
-                                                       #in the analysis
 MAP = lmr.LensingMap(2048)
+
+MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis')
+
+STR4 = lambda res: str(int(res)).zfill(4)
+STR2 = lambda res: str(int(res)).zfill(2)
 
 def lonlat2colatlon(coord):
     '''
@@ -43,36 +47,12 @@ def colatlon2lonlat(coord):
 ###
 
 # Lensing era stats
-
-def plotExtrema(Map, mask, thresh=3):
+def detectES(Map, mask):
     '''
-    Plotst map with only unmasked pixels the ones above thresh * map global std.
+    Returns coordinates of most extreme spot on given map. This is the hottest 
+    or coldest pixel on the map.
     '''
-    newmap = np.copy(Map)
-    data = newmap[mask==1.]
-    sigma = data.std()
-    
-    newmask = np.zeros(newmap.size, float)
-    newmask[newmap<-thresh*sigma] = 1.
-    newmask[newmap>thresh*sigma] = 1.
-    newmask *=mask
-    
-    title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
-    
-    newmap[newmask==0.] = hp.UNSEEN
-    newmap = hp.ma(newmap)
-    hp.mollview(newmap, coord='G', title=title, cbar=True, unit='dimensionless')
-    
-    return np.vstack((np.where(newmask==1.)[0], newmap[newmask==1.]/sigma))
-
-# Temperature era stats
-
-def detectCS(Map, mask):
-    '''
-    Returns coordinates of coldest spot on given map. Coldest is defined by 
-    lowest filtered temperature.
-    '''
-    pix = np.where(Map==Map[mask==1].min())[0][0]
+    pix = np.where(Map==abs(Map)[mask==1].max())[0][0]
     coord = hp.pix2ang(nside=MAP.res, ipix=pix)
     return coord
 
@@ -88,13 +68,11 @@ def getDisk(centre, radius, mask):
     pixs = pixs[np.where(mask[pixs]==1.)]
     return pixs
 
-def calcStats(centre, radius, Map, mask):
+def calcStats(pixs, Map, mask):
     '''
-    Calculates the first four moments, starting from the mean, in given map
-    and disk of given centre and radius. Only unmasked pixels by given mask are 
-    considered.
+    Calculates the first four moments, starting from the mean, for given map
+    pixels.
     '''
-    pixs = getDisk(centre, radius, mask)
     sample = Map[pixs]
     
     N = sample.size
@@ -105,7 +83,69 @@ def calcStats(centre, radius, Map, mask):
     
     return np.array([mean, var, skew, kur])
 
-def chooseSims(radius, nsims=100, plot=True):
+def plotExtrema(Map, mask, phi, thresh=3, save=None):
+    '''
+    Plots map with only unmasked pixels the ones above thresh * std of 
+    Map[mask==1].
+    '''
+    newmap = np.copy(Map)
+    data = newmap[mask==1.]
+    sigma = data.std()
+    
+    newmask = np.zeros(newmap.size, float)
+    newmask[newmap<-thresh*sigma] = 1.
+    newmask[newmap>thresh*sigma] = 1.
+    newmask *=mask
+    
+    newmap[newmask==0.] = hp.UNSEEN
+    newmap = hp.ma(newmap)
+    title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
+    hp.mollview(newmap, coord='G', title=title, cbar=True, unit='dimensionless')
+    if save is not None:
+        s, a = save
+        if phi: strng = '_f'
+        else: strng = '_k'
+        fname = 'Figures/LensSignificance/'+STR4(60*s)+'_'+STR2(a)+strng
+        plt.savefig(fname)
+        plt.close()
+    
+    pixs = np.where(newmask==1.)[0].astype(int)
+    sig = Map[newmask==1.]/sigma
+    return pixs, sig
+
+def _plotAllExtrema(phi, scales=np.linspace(0.5, 15, 30), 
+                    alphas=np.linspace(1, 10, 10), thresh=3):
+    extrema = np.zeros((2, scales.size, alphas.size, 1))
+    for i in range(scales.size):
+        for j in range(alphas.size):
+            print('R, a = ', scales[i], ', ', alphas[j])
+            Map, mask = filterMap(MAP, scales[i], alphas[j], phi, mask=True)
+            pixs, sig = plotExtrema(Map, mask, phi, thresh, 
+                                    save=(scales[i], alphas[j]))
+            
+            diff = extrema.shape[-1] - pixs.size
+            if diff>=0:
+                pixs = np.pad(pixs, (0,diff), 'constant', constant_values=0)
+                sig = np.pad(sig, (0,diff), 'constant', constant_values=0)
+            if diff<0:
+                extrema = np.pad(extrema, ((0,0),(0,0),(0,0),(0,-diff)), 
+                                 'constant', constant_values=0)
+            extrema[0,i,j,:] = pixs
+            extrema[1,i,j,:] = sig
+    np.save('Figures/LensSignificance/signif_f_0030900_a0110', extrema)
+    return extrema
+
+# Temperature era stats
+def detectCS(Map, mask):
+    '''
+    Returns coordinates of coldest spot on given map. Coldest is defined by 
+    lowest filtered temperature.
+    '''
+    pix = np.where(Map==Map[mask==1].min())[0][0]
+    coord = hp.pix2ang(nside=MAP.res, ipix=pix)
+    return coord
+
+def chooseSims(radius, nsims=99, plot=True):
     coord = lonlat2colatlon(tcs.COORDCS)
     data, mask = filterMap(MAP, LMAX, radius, mask=True)
     pixs = getDisk(coord, radius, mask)
@@ -150,7 +190,7 @@ def chooseSims(radius, nsims=100, plot=True):
     
     return moments
 
-def angProf(nsims=200, apertures=np.linspace(1, 25, 13), plot=True):
+def angProf(nsims=99, apertures=np.linspace(1, 25, 13), plot=True):
     y = np.zeros((3, 4, apertures.size))
     i = 0
     for R in apertures:
@@ -178,7 +218,7 @@ def angProf(nsims=200, apertures=np.linspace(1, 25, 13), plot=True):
             ax.yaxis.get_major_formatter().set_powerlimits((0, 1))
         fig.tight_layout()
 
-def compareFilteredTemp(radius, nsims=100, plot=True):
+def compareFilteredTemp(radius, nsims=99, plot=True):
     '''
     Calculates moments of real map and of nsims in number simulations.
     Moments are based on disk averages. 
@@ -204,7 +244,7 @@ def compareFilteredTemp(radius, nsims=100, plot=True):
         ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
     return np.concatenate((np.array([TCS]), T))
 
-def compareFilteredSims(radius, nsims=100, plot=True, bins=10, normed=False):
+def compareFilteredSims(radius, nsims=99, plot=True, bins=10, normed=False):
     '''
     Calculates moments of real map and of nsims in number simulations.
     Moments are based on disk averages.
@@ -235,7 +275,7 @@ def compareFilteredSims(radius, nsims=100, plot=True, bins=10, normed=False):
         fig.tight_layout()
     return moments
 
-def calcArea(nsims=100, thresh=4, apertures=np.linspace(200, 300, 3)):
+def calcArea(nsims=99, thresh=4, apertures=np.linspace(200, 300, 3)):
     apertures = apertures/60
     allAreas = np.zeros((2, apertures.size, nsims+1))
     i = 0
