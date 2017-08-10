@@ -2,7 +2,8 @@
 Analyses Cold Spot statistics. As of this commit 14, the module applies on 
 Lensing Maps.
 
-!!! comments (explain params, consistency with filtering, etc..)
+!!! implement sims in histspots and findarea 
+ - comments (explain params, consistency with filtering, etc..)
  - class inheriting from LensingMap for stats
  - What about spots half covered by mask? (maybe ignore discs with more than
    half pixels covered?)
@@ -10,14 +11,19 @@ Lensing Maps.
 import numpy as np
 import astropy as ap
 import healpy as hp
+import scipy.ndimage.measurements as snm
 import matplotlib.pylab as plt
-from MapFilts import filterMap
 import LensMapRecon as lmr
+from MapFilts import filterMap
 
 # Global constants and functions
-MAP = lmr.LensingMap(2048)
+#MAP = lmr.LensingMap(2048)
 
+NSIMS = 99
+DIRFIG = 'Figures/LensSignificance/'
 MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis')
+FR = np.linspace(0.5, 15, 30)*60
+FA = np.linspace(1, 10, 10)
 
 STR4 = lambda res: str(int(res)).zfill(4)
 STR2 = lambda res: str(int(res)).zfill(2)
@@ -28,6 +34,10 @@ def lonlat2colatlon(coord):
     Returns tuple in form (colatitude, longitude)
     '''
     lon, lat = coord
+    if isinstance(lon, float):
+        if lon<0: lon +=360
+    #else:
+    #    lon[lon<0] +=360
     cb, lon = np.radians(90-lat), np.radians(lon)
     return cb, lon
 
@@ -41,7 +51,7 @@ def colatlon2lonlat(coord):
     if isinstance(lon, float):
         if lon>180: lon -=360
     else:
-        if lon[0]>180.: lon -=360
+        lon[lon>180] -=360
     return lon, lat
 
 ###
@@ -83,7 +93,59 @@ def calcStats(pixs, Map, mask):
     
     return np.array([mean, var, skew, kur])
 
-def plotExtrema(Map, mask, phi, thresh=3, save=None):
+def histSpots(phi, scales=(30,900), alphas=(1,10), gran=180):
+    if phi: strng = '_f'
+    else: strng = '_k'
+    si = np.where(FR==scales[0])[0][0]
+    sf = np.where(FR==scales[1])[0][0] + 1
+    ai = np.where(FA==alphas[0])[0][0]
+    af = np.where(FA==alphas[1])[0][0] + 1
+    
+    spots = np.load(DIRFIG+'signif'+strng+'_R00300900_a0110.npy')
+    pixs = spots[0,si:sf,ai:af,:].astype(int)
+    sig = spots[1,si:sf,ai:af,:]
+    
+    count = np.bincount( pixs[np.nonzero(pixs)] )
+    count = np.repeat( np.arange(count.size), count )
+    cb, lon = hp.pix2ang(2048, count) #MAP.res
+    lon, lat = colatlon2lonlat((cb, lon))
+    lon, lat = np.around(lon, 3), np.around(lat, 3)
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    cmap = plt.cm.get_cmap('YlOrBr')
+    cmap.set_under('cornflowerblue', 1)
+    cc, ll, bb, img = ax.hist2d(lon, lat, bins=(2*gran,gran), vmin=1, 
+                        range=[[-180, 180], [-90, 90]], normed=False, cmap=cmap)
+    ax.invert_xaxis()
+    ax.set_xlabel('Longitude (deg)')
+    ax.set_ylabel('Polar angle (deg)')
+    cmap = fig.colorbar(img, ax=ax)
+    
+    return ll, bb, cc
+
+def findArea(ll, bb, cc):
+    '''
+    Finds maximum area metric and its centre on given counts cc, with
+    corresponding longitude ll and latitude bb.
+    '''
+    lab, total = snm.label(cc)
+    
+    area, n = 0, 0
+    for i in range(total):
+        if cc[lab==i].sum()>area:
+            area = cc[lab==i].sum()
+            n = i
+    
+    bins = np.where(lab==n)
+    lon = ll[bins[0]].mean()
+    lat = bb[bins[1]].mean()
+    coord = lonlat2colatlon((lon, lat))
+    coord = (lon, lat)
+    
+    return coord, area
+
+def plotExtrema(Map, mask, phi, thresh=3, savefig=None):
     '''
     Plots map with only unmasked pixels the ones above thresh * std of 
     Map[mask==1].
@@ -97,15 +159,15 @@ def plotExtrema(Map, mask, phi, thresh=3, save=None):
     newmask[newmap>thresh*sigma] = 1.
     newmask *=mask
     
-    newmap[newmask==0.] = hp.UNSEEN
-    newmap = hp.ma(newmap)
-    title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
-    hp.mollview(newmap, coord='G', title=title, cbar=True, unit='dimensionless')
-    if save is not None:
-        s, a = save
+    #newmap[newmask==0.] = hp.UNSEEN
+    #newmap = hp.ma(newmap)
+    #title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
+    #hp.mollview(newmap, coord='G', title=title, cbar=True, unit='dimensionless')
+    if savefig is not None:
+        s, a = savefig
         if phi: strng = '_f'
         else: strng = '_k'
-        fname = 'Figures/LensSignificance/'+STR4(60*s)+'_'+STR2(a)+strng
+        fname = DIRFIG+STR4(60*s)+'_'+STR2(a)+strng
         plt.savefig(fname)
         plt.close()
     
@@ -113,15 +175,20 @@ def plotExtrema(Map, mask, phi, thresh=3, save=None):
     sig = Map[newmask==1.]/sigma
     return pixs, sig
 
-def _plotAllExtrema(phi, scales=np.linspace(0.5, 15, 30), 
+def _plotAllExtrema(phi, sim, savefig=None, scales=np.linspace(0.5, 15, 30), 
                     alphas=np.linspace(1, 10, 10), thresh=3):
     extrema = np.zeros((2, scales.size, alphas.size, 1))
     for i in range(scales.size):
         for j in range(alphas.size):
             print('R, a = ', scales[i], ', ', alphas[j])
-            Map, mask = filterMap(MAP, scales[i], alphas[j], phi, mask=True)
-            pixs, sig = plotExtrema(Map, mask, phi, thresh, 
-                                    save=(scales[i], alphas[j]))
+            if sim in np.arange(NSIMS):
+                MAP.loadSim(sim)
+            if savefig is not None:
+                savefig = (scales[i], alphas[j])
+                      
+            Map, mask = filterMap(MAP, scales[i], alphas[j], phi, mask=True,
+                                  sim=True)
+            pixs, sig = plotExtrema(Map, mask, phi, thresh, savefig)
             
             diff = extrema.shape[-1] - pixs.size
             if diff>=0:
@@ -132,8 +199,13 @@ def _plotAllExtrema(phi, scales=np.linspace(0.5, 15, 30),
                                  'constant', constant_values=0)
             extrema[0,i,j,:] = pixs
             extrema[1,i,j,:] = sig
-    np.save('Figures/LensSignificance/signif_f_0030900_a0110', extrema)
+    
+    np.save(DIRFIG+'_k_R00300900_a0110_'+STR2(sim), extrema)
     return extrema
+
+for sim in np.arange(NSIMS):
+    print('\nSIM = ', sim, '\n')
+    _plotAllExtrema(phi=False, sim=sim)
 
 # Temperature era stats
 def detectCS(Map, mask):

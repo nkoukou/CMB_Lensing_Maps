@@ -19,7 +19,7 @@ STR2 = lambda res: str(int(res)).zfill(2)
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, a, phi, mask=False, sim=False, lmax=None):
+def filterMap(MAP, scale, a, phi, mask, sim, lmax=None):
     '''
     Filters map at given scale, considering ell components up to given lmax. If 
     lmax = None, the default lmax of the MAP is used.
@@ -47,7 +47,7 @@ def filterMap(MAP, scale, a, phi, mask=False, sim=False, lmax=None):
         Map = MAP.kmap
         mlm = MAP.klm
     else:
-        raise ValueError('Checl phi and sim arguments')
+        raise ValueError('Check phi and sim arguments')
     #print("Filt")
     W = mexHat(R, a, MAP.cb)
     wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
