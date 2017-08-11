@@ -4,7 +4,7 @@ Lensing Maps.
 
 !!! implement sims in histspots and findarea 
  - comments (explain params, consistency with filtering, etc..)
- - class inheriting from LensingMap for stats
+ - results file names
  - What about spots half covered by mask? (maybe ignore discs with more than
    half pixels covered?)
 '''
@@ -17,13 +17,15 @@ import LensMapRecon as lmr
 from MapFilts import filterMap
 
 # Global constants and functions
-#MAP = lmr.LensingMap(2048)
+MAP = lmr.LensingMap(2048)
 
-NSIMS = 99
 DIRFIG = 'Figures/LensSignificance/'
+DIRRES = 'CMBL_Maps/results/'
+
+FR = np.linspace(4.5, 5.5, 3)*60#np.linspace(0.5, 15, 30)*60 !!!
+FA = np.linspace(2, 3, 2)#np.linspace(1, 10, 10) !!!
+
 MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis')
-FR = np.linspace(0.5, 15, 30)*60
-FA = np.linspace(1, 10, 10)
 
 STR4 = lambda res: str(int(res)).zfill(4)
 STR2 = lambda res: str(int(res)).zfill(2)
@@ -57,43 +59,35 @@ def colatlon2lonlat(coord):
 ###
 
 # Lensing era stats
-def detectES(Map, mask):
+def histSims(phi, scales=(300, 300), alphas=(2,2), metric='area', gran=180, 
+             plot=True):
     '''
-    Returns coordinates of most extreme spot on given map. This is the hottest 
-    or coldest pixel on the map.
+    Plots histogram of data against in comparison to simulations.
+    !!! implement metric "most extreme S/N"
     '''
-    pix = np.where(Map==abs(Map)[mask==1].max())[0][0]
-    coord = hp.pix2ang(nside=MAP.res, ipix=pix)
-    return coord
-
-def getDisk(centre, radius, mask):
-    '''
-    Returns pixels within the disk of given centre and radius on any map, 
-    excluding the boundaries. Only unmasked pixels by given mask are returned.
-    '''
-    R = np.radians(radius)
-    cb, lon = centre
-    VEC = hp.ang2vec(cb, lon, lonlat=False)
-    pixs = hp.query_disc(MAP.res, vec=VEC, radius=R, inclusive=False)
-    pixs = pixs[np.where(mask[pixs]==1.)]
-    return pixs
-
-def calcStats(pixs, Map, mask):
-    '''
-    Calculates the first four moments, starting from the mean, for given map
-    pixels.
-    '''
-    sample = Map[pixs]
+    print('START')
+    ll, bb, cc = histSpots(lmr.NSIMS, phi, scales, alphas, gran, plot=False)
+    print('AREA')
+    coord, data = findArea(ll, bb, cc) #!!! make coord optional
     
-    N = sample.size
-    mean = 1./N * sample.sum()
-    var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
-    skew = 1./(N*var**3) * ((sample-mean)**3).sum()
-    kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3
+    sims = np.zeros(lmr.NSIMS)
+    for n in range(lmr.NSIMS):
+        print(n)
+        ll, bb, cc = histSpots(n, phi, scales, alphas, gran, plot=False)
+        print('AREA')
+        coord, area = findArea(ll, bb, cc) #coord
+        sims[n] = area
     
-    return np.array([mean, var, skew, kur])
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.hist(sims, bins=9, normed=False, color='b') #5
+        ax.axvline(x=data, color='k', ls='--')
+        ax.set_xlabel(r'$T_{cold}$')
+        ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+    return data, sims
 
-def histSpots(phi, scales=(30,900), alphas=(1,10), gran=180):
+def histSpots(sim, phi, scales=(30,900), alphas=(1,10), gran=180, plot=False):
     if phi: strng = '_f'
     else: strng = '_k'
     si = np.where(FR==scales[0])[0][0]
@@ -101,27 +95,30 @@ def histSpots(phi, scales=(30,900), alphas=(1,10), gran=180):
     ai = np.where(FA==alphas[0])[0][0]
     af = np.where(FA==alphas[1])[0][0] + 1
     
-    spots = np.load(DIRFIG+'signif'+strng+'_R00300900_a0110.npy')
+    spots = np.load(DIRRES+'signif'+strng+'_R02700330_a0203_'+STR2(sim)+'.npy')
     pixs = spots[0,si:sf,ai:af,:].astype(int)
     sig = spots[1,si:sf,ai:af,:]
-    
+    print('RED DATA')
     count = np.bincount( pixs[np.nonzero(pixs)] )
     count = np.repeat( np.arange(count.size), count )
     cb, lon = hp.pix2ang(2048, count) #MAP.res
     lon, lat = colatlon2lonlat((cb, lon))
     lon, lat = np.around(lon, 3), np.around(lat, 3)
     
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    cmap = plt.cm.get_cmap('YlOrBr')
-    cmap.set_under('cornflowerblue', 1)
-    cc, ll, bb, img = ax.hist2d(lon, lat, bins=(2*gran,gran), vmin=1, 
-                        range=[[-180, 180], [-90, 90]], normed=False, cmap=cmap)
-    ax.invert_xaxis()
-    ax.set_xlabel('Longitude (deg)')
-    ax.set_ylabel('Polar angle (deg)')
-    cmap = fig.colorbar(img, ax=ax)
-    
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        cmap = plt.cm.get_cmap('YlOrBr')
+        cmap.set_under('cornflowerblue', 1)
+        cc, ll, bb, img = ax.hist2d(lon, lat, bins=(2*gran,gran), vmin=1, 
+          range=[[-180, 180], [-90, 90]], normed=False, cmap=cmap)
+        ax.invert_xaxis()
+        ax.set_xlabel('Longitude (deg)')
+        ax.set_ylabel('Polar angle (deg)')
+        cmap = fig.colorbar(img, ax=ax)
+    else:
+        cc, ll, bb = np.histogram2d(lon, lat, bins=(2*gran,gran), 
+          range=[[-180, 180], [-90, 90]], normed=False)
     return ll, bb, cc
 
 def findArea(ll, bb, cc):
@@ -175,21 +172,23 @@ def plotExtrema(Map, mask, phi, thresh=3, savefig=None):
     sig = Map[newmask==1.]/sigma
     return pixs, sig
 
-def _plotAllExtrema(phi, sim, savefig=None, scales=np.linspace(0.5, 15, 30), 
-                    alphas=np.linspace(1, 10, 10), thresh=3):
+def _plotAllExtrema(phi, sim, scales=np.linspace(0.5, 15, 30), 
+                    alphas=np.linspace(1, 10, 10), thresh=3, savefig=None):
+    strsim = sim
     extrema = np.zeros((2, scales.size, alphas.size, 1))
     for i in range(scales.size):
         for j in range(alphas.size):
             print('R, a = ', scales[i], ', ', alphas[j])
-            if sim in np.arange(NSIMS):
-                MAP.loadSim(sim)
+            
+            if sim in np.arange(lmr.NSIMS):
+                MAP.loadSim(sim, phi)
+                sim = True
             if savefig is not None:
                 savefig = (scales[i], alphas[j])
-                      
-            Map, mask = filterMap(MAP, scales[i], alphas[j], phi, mask=True,
-                                  sim=True)
-            pixs, sig = plotExtrema(Map, mask, phi, thresh, savefig)
             
+            Map, mask = filterMap(MAP, scales[i], alphas[j], phi, mask=True,
+                                  sim=sim)
+            pixs, sig = plotExtrema(Map, mask, phi, thresh, savefig)
             diff = extrema.shape[-1] - pixs.size
             if diff>=0:
                 pixs = np.pad(pixs, (0,diff), 'constant', constant_values=0)
@@ -200,12 +199,22 @@ def _plotAllExtrema(phi, sim, savefig=None, scales=np.linspace(0.5, 15, 30),
             extrema[0,i,j,:] = pixs
             extrema[1,i,j,:] = sig
     
-    np.save(DIRFIG+'_k_R00300900_a0110_'+STR2(sim), extrema)
+    #np.save(DIRRES+'signif_kNAME_R02700330_a0203_'+STR2(strsim), extrema)
     return extrema
 
-for sim in np.arange(NSIMS):
-    print('\nSIM = ', sim, '\n')
-    _plotAllExtrema(phi=False, sim=sim)
+#import time
+#start = time.time()
+#
+#scales = np.array([4.5,5,5.5])
+#alphas = np.array([2,3])
+#print(scales, alphas)
+#for sim in np.arange(5, 6):
+#    print('\nSIM = ', sim, '\n')
+#    _plotAllExtrema(phi=False, sim=sim, scales=scales, alphas=alphas)
+#    stop = time.time()
+#    print('{0:.0f} seconds'.format(stop-start))
+#stop = time.time()
+#print('\n94 sims in {0:.0f} seconds'.format(stop-start))
 
 # Temperature era stats
 def detectCS(Map, mask):
@@ -216,6 +225,42 @@ def detectCS(Map, mask):
     pix = np.where(Map==Map[mask==1].min())[0][0]
     coord = hp.pix2ang(nside=MAP.res, ipix=pix)
     return coord
+
+def detectES(Map, mask):
+    '''
+    Returns coordinates of most extreme spot on given map. This is the hottest 
+    or coldest pixel on the map.
+    '''
+    pix = np.where(Map==abs(Map)[mask==1].max())[0][0]
+    coord = hp.pix2ang(nside=MAP.res, ipix=pix)
+    return coord
+
+def getDisk(centre, radius, mask):
+    '''
+    Returns pixels within the disk of given centre and radius on any map, 
+    excluding the boundaries. Only unmasked pixels by given mask are returned.
+    '''
+    R = np.radians(radius)
+    cb, lon = centre
+    VEC = hp.ang2vec(cb, lon, lonlat=False)
+    pixs = hp.query_disc(MAP.res, vec=VEC, radius=R, inclusive=False)
+    pixs = pixs[np.where(mask[pixs]==1.)]
+    return pixs
+
+def calcStats(pixs, Map, mask):
+    '''
+    Calculates the first four moments, starting from the mean, for given map
+    pixels.
+    '''
+    sample = Map[pixs]
+    
+    N = sample.size
+    mean = 1./N * sample.sum()
+    var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
+    skew = 1./(N*var**3) * ((sample-mean)**3).sum()
+    kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3
+    
+    return np.array([mean, var, skew, kur])
 
 def chooseSims(radius, nsims=99, plot=True):
     coord = lonlat2colatlon(tcs.COORDCS)

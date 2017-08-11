@@ -29,17 +29,15 @@ def filterMap(MAP, scale, a, phi, mask, sim, lmax=None):
     
     !!! same mask used regardless the value of parameter a
     '''
-    R = np.radians(scale)
     if lmax is not None:
         temp = MAP.lmax
         MAP.lmax = lmax
-    
     if sim and phi:    
         Map = MAP.fsim
-        mlm = hp.map2alm(Map, lmax=MAP.lmax)
+        mlm = MAP.fslm
     elif sim and not phi:    
         Map = MAP.ksim
-        mlm = hp.map2alm(Map, lmax=MAP.lmax)
+        mlm = MAP.kslm
     elif not sim and phi:    
         Map = MAP.fmap
         mlm = MAP.flm
@@ -48,20 +46,14 @@ def filterMap(MAP, scale, a, phi, mask, sim, lmax=None):
         mlm = MAP.klm
     else:
         raise ValueError('Check phi and sim arguments')
-    #print("Filt")
-    W = mexHat(R, a, MAP.cb)
-    wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
     
-    ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
-    fl = ellFac * np.conj(wlm)
+    fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
     convAlm = hp.almxfl(alm=mlm, fl=fl)
-    #print("Conv")
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
         fmask = MAP.core+'_maskFilt'+STR4(60*scale)+'.npy'
         if os.path.isfile(fmask):
-            #print(1)
             newmask = np.load(fmask)
         else:
             print(0)
@@ -165,6 +157,20 @@ def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
     np.save(MAP.core+'_maskFilt'+STR4(60*scale), MAP.mask * m)
     return newmask
 
+# Exporting function for wlm's
+
+def exportWlm(MAP, scales=np.linspace(0.5, 15, 30), 
+              alphas=np.linspace(1, 10, 10)):
+    ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
+    for s in scales:
+        R = np.radians(s)
+        for a in alphas:
+            print('R, a = ', s, ', ', a)
+            W = mexHat(R, a, MAP.cb)
+            wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
+            fl = ellFac * np.conj(wlm)
+            
+            np.save(MAP.core+'_wlm'+STR4(60*s)+STR2(a), fl)
 
 
 

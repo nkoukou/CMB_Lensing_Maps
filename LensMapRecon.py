@@ -7,16 +7,15 @@ import healpy as hp
 import matplotlib.pylab as plt
 
 # Global constants and functions
-DIR_MASKGAL = 'CMBL_Maps/HFI_Mask_GalPlane-apo0_2048_R2.00.fits'
-
 NSIDES = [2**x for x in range(4, 12)]
+NSIMS = 99
 
 BEAM = 5./60 * np.pi/180 #radians
 FWHM = {};
 for nside in NSIDES: FWHM[nside] = BEAM * (2048/nside) #radians
 
 LMAX = lambda res: res
-STR = lambda res: str(int(res)).zfill(4)
+STR4 = lambda res: str(int(res)).zfill(4)
 
 ###
 
@@ -32,14 +31,15 @@ class LensingMap(object):
         the original .fits file is read with resolution 2048. 
         '''
         self.dir = 'CMBL_Maps/'
-        self.core = self.dir + 'data/n' + STR(res)
+        self.core = self.dir + 'data/n' + STR4(res)
         self.dirSim = self.dir + 'sims/obs_klms/'
         rawSpec = np.loadtxt(self.dir+'nlkk.dat')
         
         if res==None:
-            self.mask = hp.read_map(self.dir+'mask.fits', verbose=False)
+            self.mask = hp.read_map(self.dir+'.none/mask.fits', verbose=False)
             self.malm = hp.map2alm(self.mask)
             print('MASK')
+            DIR_MASKGAL='CMBL_Maps/.none/HFI_Mask_GalPlane-apo0_2048_R2.00.fits'
             self.maskGal = hp.read_map(DIR_MASKGAL, field=3, verbose=False)
             self.malmGal = hp.map2alm(self.maskGal)
             print('MASKGAL')
@@ -47,7 +47,7 @@ class LensingMap(object):
             self.res = hp.npix2nside(self.mask.size)
             self.lmax = LMAX(self.res)
             
-            self.klm = hp.read_alm(self.dir+'dat_klm.fits')
+            self.klm = hp.read_alm(self.dir+'.none/dat_klm.fits')
             self.kmap = hp.alm2map(self.klm, self.res, verbose=False)
             print('KMAP')
             
@@ -79,21 +79,21 @@ class LensingMap(object):
             
             self.kmap = hp.read_map(self.core+'_kmap.fits', verbose=False)
             self.klm = hp.read_alm(self.core+'_klm.fits')
-            print('KMAP -> FMAP')
+            #print('KMAP -> FMAP')
             
-            self.fmap = hp.read_map(self.core+'_fmap.fits', verbose=False)
-            self.flm = hp.read_alm(self.core+'_flm.fits')
-            print('FMAP -> MASK')
+            #self.fmap = hp.read_map(self.core+'_fmap.fits', verbose=False)
+            #self.flm = hp.read_alm(self.core+'_flm.fits')
+            #print('FMAP -> MASK')
             
             self.mask = hp.read_map(self.core+'_mask.fits', verbose=False)
             #self.malm = hp.read_alm(self.core+'_malm.fits')
-            print('MASK -> MASKGAL')
+            #print('MASK -> MASKGAL')
             
-            self.maskGal = hp.read_map(self.core+'_maskGal.fits', verbose=False)
+            #self.maskGal = hp.read_map(self.core+'_maskGal.fits',verbose=False)
             #self.malmGal = hp.read_alm(self.core+'_malmGal.fits')
             
             self.ksim = None
-            self.fsim = None
+            #self.fsim = None
             
         else:
             raise ValueError('Resolution (Nside) must be a power of 2')
@@ -191,7 +191,7 @@ class LensingMap(object):
         ax.set_xlabel(r'$L$')  
         ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
     
-    def loadSim(self, n, plot=False, mask=True):
+    def loadSim(self, n, phi, plot=False, mask=True):
         '''
         Loads the n-th simulation in directory self.dirSim.
         
@@ -199,25 +199,25 @@ class LensingMap(object):
         covered by mask??
         '''
         if self.res!=2048: raise ValueError('!!!only in res=2048')
+        slm = hp.read_alm(self.dirSim+'sim_'+STR4(n)+'_klm.fits')
+        self.kslm = slm
+        self.ksim = np.load(self.dirSim+'sim_'+STR4(n)+'_kmap.npy')
         
-        slm = hp.read_alm(self.dirSim+'sim_'+STR(n)+'_klm.fits')
-        self.ksim = hp.alm2map(slm, 2048, verbose=False)
-        
-        fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
-        fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
-        slm = hp.almxfl(slm, fl)
-        self.fsim = hp.alm2map(slm, 2048, verbose=False)
-        
-        if plot:
-            Map = np.copy(self.fsim)
-            if mask:
-                Map[self.mask==0.] = hp.UNSEEN
-                Map = hp.ma(Map)
-            title = r'Simulated lensing potential $\phi$'
-            hp.mollview(Map, coord='G', title=title, cbar=True, 
-                        unit=r'dimensionless')
-
-
+        if phi:
+            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
+            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+            slm = hp.almxfl(slm, fl)
+            self.fslm = slm
+            self.fsim = hp.alm2map(slm, 2048, verbose=False) #!!! load as kappa
+            
+            if plot:
+                Map = np.copy(self.fsim)
+                if mask:
+                    Map[self.mask==0.] = hp.UNSEEN
+                    Map = hp.ma(Map)
+                title = r'Simulated lensing potential $\phi$'
+                hp.mollview(Map, coord='G', title=title, cbar=True, 
+                            unit=r'dimensionless')
 
 
 
