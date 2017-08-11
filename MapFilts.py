@@ -19,33 +19,34 @@ STR2 = lambda res: str(int(res)).zfill(2)
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, a, phi, mask, sim, lmax=None):
+def filterMap(MAP, scale, a, mask, phi, is_sim, lmax=None):
     '''
     Filters map at given scale, considering ell components up to given lmax. If 
     lmax = None, the default lmax of the MAP is used.
     
     If mask=True, returns filtered mask as well.
-    If sim=True, filters simulation MAP.sim instead of the real data.
+    If is_sim=True, filters simulation MAP.sim instead of the real data.
     
     !!! same mask used regardless the value of parameter a
     '''
     if lmax is not None:
         temp = MAP.lmax
         MAP.lmax = lmax
-    if sim and phi:    
+    
+    if is_sim and phi:    
         Map = MAP.fsim
         mlm = MAP.fslm
-    elif sim and not phi:    
+    elif is_sim and not phi:    
         Map = MAP.ksim
         mlm = MAP.kslm
-    elif not sim and phi:    
+    elif not is_sim and phi:    
         Map = MAP.fmap
         mlm = MAP.flm
-    elif not sim and not phi:    
+    elif not is_sim and not phi:    
         Map = MAP.kmap
         mlm = MAP.klm
     else:
-        raise ValueError('Check phi and sim arguments')
+        raise ValueError('Check phi and is_sim arguments')
     
     fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
     convAlm = hp.almxfl(alm=mlm, fl=fl)
@@ -56,7 +57,7 @@ def filterMap(MAP, scale, a, phi, mask, sim, lmax=None):
         if os.path.isfile(fmask):
             newmask = np.load(fmask)
         else:
-            print(0)
+            print('MASK WAS NOT FOUND')
             newmask = _filterMask(MAP, scale, W, ellFac)
         newmap = (newmap, newmask)
     if lmax is not None:
@@ -159,7 +160,7 @@ def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
 
 # Exporting function for wlm's
 
-def exportWlm(MAP, scales=np.linspace(0.5, 15, 30), 
+def _exportWlm(MAP, scales=np.linspace(0.5, 15, 30), 
               alphas=np.linspace(1, 10, 10)):
     ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
     for s in scales:

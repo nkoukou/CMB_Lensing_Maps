@@ -95,10 +95,10 @@ def histSpots(sim, phi, scales=(30,900), alphas=(1,10), gran=180, plot=False):
     ai = np.where(FA==alphas[0])[0][0]
     af = np.where(FA==alphas[1])[0][0] + 1
     
-    spots = np.load(DIRRES+'signif'+strng+'_R02700330_a0203_'+STR2(sim)+'.npy')
+    spots = np.load(DIRRES+'signifX'+strng+'NAME_R02700330_a0203_'+STR2(sim)+'.npy')
     pixs = spots[0,si:sf,ai:af,:].astype(int)
     sig = spots[1,si:sf,ai:af,:]
-    print('RED DATA')
+    
     count = np.bincount( pixs[np.nonzero(pixs)] )
     count = np.repeat( np.arange(count.size), count )
     cb, lon = hp.pix2ang(2048, count) #MAP.res
@@ -142,10 +142,12 @@ def findArea(ll, bb, cc):
     
     return coord, area
 
-def plotExtrema(Map, mask, phi, thresh=3, savefig=None):
+def plotExtrema(Map, mask, phi, thresh=3, plot=False, savefig=None):
     '''
     Plots map with only unmasked pixels the ones above thresh * std of 
-    Map[mask==1].
+    Map[mask==1] and returns these pixels along with their significance. Plots 
+    only if plot=True and saves figures only if savefig is a tuple of scale and
+    alpha parameters which the map was filtered with.
     '''
     newmap = np.copy(Map)
     data = newmap[mask==1.]
@@ -156,10 +158,12 @@ def plotExtrema(Map, mask, phi, thresh=3, savefig=None):
     newmask[newmap>thresh*sigma] = 1.
     newmask *=mask
     
-    #newmap[newmask==0.] = hp.UNSEEN
-    #newmap = hp.ma(newmap)
-    #title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
-    #hp.mollview(newmap, coord='G', title=title, cbar=True, unit='dimensionless')
+    if plot:
+        newmap[newmask==0.] = hp.UNSEEN
+        newmap = hp.ma(newmap)
+        title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
+        hp.mollview(newmap, coord='G', title=title, cbar=True, 
+                    unit='dimensionless')
     if savefig is not None:
         s, a = savefig
         if phi: strng = '_f'
@@ -173,22 +177,44 @@ def plotExtrema(Map, mask, phi, thresh=3, savefig=None):
     return pixs, sig
 
 def _plotAllExtrema(phi, sim, scales=np.linspace(0.5, 15, 30), 
-                    alphas=np.linspace(1, 10, 10), thresh=3, savefig=None):
-    strsim = sim
+                    alphas=np.linspace(1, 10, 10), thresh=3, 
+                    savefig=None, saveres=False):
+    '''
+    Saves or returns all extreme spots (in the form of pixels) along with their 
+    significance of given map. Parameters:
+      - phi: bool - when True, uses phi map instead of kappa map
+      - sim: int - indicates simulation number to be used. Real data are 
+                   represented by 99.
+      - scales, alphas: array - indicate the scale and alpha parameters to be 
+                                used by the filter
+      - thresh: float - indicate the level of sigmas at which a spoot is 
+                        considered extreme 
+      - savefig: Nonetype - if savefig is not None, the figures of the extreme 
+                            spots at all scales and alphas are saved as well
+      - saveres: bool - when True spots along their significance are saved
+                        instead of returned 
+    '''
     extrema = np.zeros((2, scales.size, alphas.size, 1))
+            
+    if sim in np.arange(lmr.NSIMS):
+        MAP.loadSim(sim, phi)
+        is_sim = True
+    elif sim==99:
+        is_sim = False
+    else:
+        raise ValueError('Check sim argument')
+    
     for i in range(scales.size):
         for j in range(alphas.size):
-            print('R, a = ', scales[i], ', ', alphas[j])
-            
-            if sim in np.arange(lmr.NSIMS):
-                MAP.loadSim(sim, phi)
-                sim = True
+            print('R, a =', scales[i], ', ', alphas[j])
+    
             if savefig is not None:
                 savefig = (scales[i], alphas[j])
             
-            Map, mask = filterMap(MAP, scales[i], alphas[j], phi, mask=True,
-                                  sim=sim)
+            Map, mask = filterMap(MAP, scales[i], alphas[j], mask=True, phi=phi,
+                                  is_sim=is_sim)
             pixs, sig = plotExtrema(Map, mask, phi, thresh, savefig)
+            
             diff = extrema.shape[-1] - pixs.size
             if diff>=0:
                 pixs = np.pad(pixs, (0,diff), 'constant', constant_values=0)
@@ -199,22 +225,24 @@ def _plotAllExtrema(phi, sim, scales=np.linspace(0.5, 15, 30),
             extrema[0,i,j,:] = pixs
             extrema[1,i,j,:] = sig
     
-    #np.save(DIRRES+'signif_kNAME_R02700330_a0203_'+STR2(strsim), extrema)
-    return extrema
+    if saveres:
+        np.save(DIRRES+'signif_k_R02700330_a0203_'+STR2(sim), extrema)
+    else:
+        return extrema
 
-#import time
-#start = time.time()
-#
-#scales = np.array([4.5,5,5.5])
-#alphas = np.array([2,3])
-#print(scales, alphas)
-#for sim in np.arange(5, 6):
-#    print('\nSIM = ', sim, '\n')
-#    _plotAllExtrema(phi=False, sim=sim, scales=scales, alphas=alphas)
-#    stop = time.time()
-#    print('{0:.0f} seconds'.format(stop-start))
-#stop = time.time()
-#print('\n94 sims in {0:.0f} seconds'.format(stop-start))
+import time
+start = time.time()
+
+scales = np.array([4.5,5,5.5])
+alphas = np.array([2,3])
+print(scales, alphas)
+for sim in np.arange(lmr.NSIMS):
+    print('\nSIM = ', sim, '\n')
+    _plotAllExtrema(phi=False, sim=sim, scales=scales, alphas=alphas, saveres=True)
+    stop = time.time()
+    print('{0:.0f} seconds'.format(stop-start))
+stop = time.time()
+print('\nEND: {0:.0f} seconds'.format(stop-start))
 
 # Temperature era stats
 def detectCS(Map, mask):

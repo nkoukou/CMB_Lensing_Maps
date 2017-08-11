@@ -11,6 +11,8 @@ __pycache__/*
 *.swp
 
 # Data
+*.tar
+
 *.fits
 
 *.txt
