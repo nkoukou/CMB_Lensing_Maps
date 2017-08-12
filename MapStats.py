@@ -2,9 +2,11 @@
 Analyses Cold Spot statistics. As of this commit 14, the module applies on 
 Lensing Maps.
 
-!!! implement sims in histspots and findarea 
- - comments (explain params, consistency with filtering, etc..)
- - results file names
+!!! implement sims in histspots and findarea
+ - results file names, concatenate results
+ - clean code (merge functions, consistency of arguments and function outputs 
+   with filtering, comments -explain params, etc...)
+ - find sigmas for all sims and data, add signal-to-noise metrics
  - What about spots half covered by mask? (maybe ignore discs with more than
    half pixels covered?)
 '''
@@ -38,8 +40,8 @@ def lonlat2colatlon(coord):
     lon, lat = coord
     if isinstance(lon, float):
         if lon<0: lon +=360
-    #else:
-    #    lon[lon<0] +=360
+    else:
+        lon[lon<0] +=360
     cb, lon = np.radians(90-lat), np.radians(lon)
     return cb, lon
 
@@ -59,22 +61,61 @@ def colatlon2lonlat(coord):
 ###
 
 # Lensing era stats
-def histSims(phi, scales=(300, 300), alphas=(2,2), metric='area', gran=180, 
-             plot=True):
+def sliceSims(sim, phi, scales, alphas, mode):
+    if phi: strng = '_f'
+    else: strng = '_k'
+    si = np.where(FR==scales[0])[0][0]
+    sf = np.where(FR==scales[1])[0][0] + 1
+    ai = np.where(FA==alphas[0])[0][0]
+    af = np.where(FA==alphas[1])[0][0] + 1
+    
+    spots = np.load(DIRRES+'signif'+strng+'_R02700330_a0203_'+STR2(sim)+'.npy')
+    pixs = spots[0,si:sf,ai:af,:].astype(int)
+    sig = spots[1,si:sf,ai:af,:]
+    
+    if mode=='sp':
+        return pixs, sig
+    elif mode=='s':
+        return sig
+    elif mode=='p':
+        return pixs
+    else:
+        raise ValueError('Check parameter mode')
+
+def histSigNoise(phi, scales=(300, 300), alphas=(2,2), gran=180, plot=True):
+    '''
+    !!!
+    '''
+    sig = sliceSims(lmr.NSIMS, phi, scales, alphas, 's')
+    data = sig.min()
+    
+    sims = np.zeros(lmr.NSIMS)
+    for n in range(lmr.NSIMS):
+        sig = sliceSims(n, phi, scales, alphas, 's')
+        sims[n] = sig.min()
+    
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.hist(sims, bins=9, normed=False, color='b') #5
+        ax.axvline(x=data, color='k', ls='--')
+        ax.set_xlabel(r'Signal to noise ratio for Cold Spots')
+        ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+        ax.set_title(r'$p=${0:.2f}'.format(sims[sims<data].size/sims.size))
+    return data, sims    
+
+def histArea(phi, scales=(300, 300), alphas=(2,2), gran=180, plot=True):
     '''
     Plots histogram of data against in comparison to simulations.
     !!! implement metric "most extreme S/N"
     '''
-    print('START')
     ll, bb, cc = histSpots(lmr.NSIMS, phi, scales, alphas, gran, plot=False)
-    print('AREA')
     coord, data = findArea(ll, bb, cc) #!!! make coord optional
     
     sims = np.zeros(lmr.NSIMS)
     for n in range(lmr.NSIMS):
         print(n)
         ll, bb, cc = histSpots(n, phi, scales, alphas, gran, plot=False)
-        print('AREA')
         coord, area = findArea(ll, bb, cc) #coord
         sims[n] = area
     
@@ -83,21 +124,19 @@ def histSims(phi, scales=(300, 300), alphas=(2,2), metric='area', gran=180,
         ax = fig.add_subplot(111)
         ax.hist(sims, bins=9, normed=False, color='b') #5
         ax.axvline(x=data, color='k', ls='--')
-        ax.set_xlabel(r'$T_{cold}$')
+        ax.set_xlabel(r'Number of pixels above threshold of $3\sigma$')
         ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+        ax.set_title(r'$p=${0:.2f}'.format(sims[sims>data].size/sims.size))
     return data, sims
 
 def histSpots(sim, phi, scales=(30,900), alphas=(1,10), gran=180, plot=False):
-    if phi: strng = '_f'
-    else: strng = '_k'
-    si = np.where(FR==scales[0])[0][0]
-    sf = np.where(FR==scales[1])[0][0] + 1
-    ai = np.where(FA==alphas[0])[0][0]
-    af = np.where(FA==alphas[1])[0][0] + 1
-    
-    spots = np.load(DIRRES+'signifX'+strng+'NAME_R02700330_a0203_'+STR2(sim)+'.npy')
-    pixs = spots[0,si:sf,ai:af,:].astype(int)
-    sig = spots[1,si:sf,ai:af,:]
+    '''
+    Returns 2D histogram of the sky with the number of pixels above the 
+    threshold stacking filters in the given range of scales and alphas and 
+    binning with given granularity gran in x and y axes (2*gran, gran) as well 
+    as plotting if plot=True.
+    '''
+    pixs = sliceSims(sim, phi, scales, alphas, 'p')
     
     count = np.bincount( pixs[np.nonzero(pixs)] )
     count = np.repeat( np.arange(count.size), count )
@@ -226,23 +265,23 @@ def _plotAllExtrema(phi, sim, scales=np.linspace(0.5, 15, 30),
             extrema[1,i,j,:] = sig
     
     if saveres:
-        np.save(DIRRES+'signif_k_R02700330_a0203_'+STR2(sim), extrema)
+        np.save(DIRRES+'signifMISS_k_R00300900_a0110_'+STR2(sim), extrema)
     else:
         return extrema
 
-import time
-start = time.time()
+#import time
+#start = time.time()
 
-scales = np.array([4.5,5,5.5])
-alphas = np.array([2,3])
-print(scales, alphas)
-for sim in np.arange(lmr.NSIMS):
-    print('\nSIM = ', sim, '\n')
-    _plotAllExtrema(phi=False, sim=sim, scales=scales, alphas=alphas, saveres=True)
-    stop = time.time()
-    print('{0:.0f} seconds'.format(stop-start))
-stop = time.time()
-print('\nEND: {0:.0f} seconds'.format(stop-start))
+#scales = np.concatenate((np.linspace(0.5,4,8), np.linspace(6,15,19)))
+#alphas = np.concatenate((np.linspace(1,1,1), np.linspace(4,10,7)))
+#print(scales, alphas)
+#for sim in np.arange(5, lmr.NSIMS):
+#    print('\nSIM = ', sim, '\n')
+#    _plotAllExtrema(phi=False, sim=sim, scales=scales, alphas=alphas, saveres=True)
+#    stop = time.time()
+#    print('{0:.0f} seconds'.format(stop-start))
+#stop = time.time()
+#print('\nEND: {0:.0f} seconds'.format(stop-start))
 
 # Temperature era stats
 def detectCS(Map, mask):
