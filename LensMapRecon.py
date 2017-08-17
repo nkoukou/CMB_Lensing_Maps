@@ -77,12 +77,12 @@ class LensingMap(object):
             self.clff = fl**2 * self.clkk
             print('KMAP')
             
-            self.kmap = hp.read_map(self.core+'_kmap.fits', verbose=False)
-            self.klm = hp.read_alm(self.core+'_klm.fits')
+            #self.kmap = hp.read_map(self.core+'_kmap.fits', verbose=False)
+            #self.klm = hp.read_alm(self.core+'_klm.fits')
             #print('KMAP -> FMAP')
             
-            #self.fmap = hp.read_map(self.core+'_fmap.fits', verbose=False)
-            #self.flm = hp.read_alm(self.core+'_flm.fits')
+            self.fmap = hp.read_map(self.core+'_fmap.fits', verbose=False)
+            self.flm = hp.read_alm(self.core+'_flm.fits')
             #print('FMAP -> MASK')
             
             self.mask = hp.read_map(self.core+'_mask.fits', verbose=False)
@@ -191,36 +191,34 @@ class LensingMap(object):
         ax.set_xlabel(r'$L$')  
         ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
     
-    def loadSim(self, n, phi, plot=False, mask=True):
+    def loadSim(self, n, phi, plot=False):
         '''
         Loads the n-th simulation in directory self.dirSim.
         
         !!!only in res=2048, how do sim_lm give rise to 0 values in the area 
         covered by mask??
         '''
-        if self.res!=2048: raise ValueError('!!!only in res=2048')
+        if self.res!=2048: raise ValueError('Only res=2048 considered')
+        
         slm = hp.read_alm(self.dirSim+'sim_'+STR4(n)+'_klm.fits')
-        self.kslm = slm
-        self.ksim = np.load(self.dirSim+'sim_'+STR4(n)+'_kmap.npy')
+        
         
         if phi:
             fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
             fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
-            slm = hp.almxfl(slm, fl)
-            self.fslm = slm
-            self.fsim = hp.alm2map(slm, 2048, verbose=False) #!!! load as kappa
+            self.fslm = hp.almxfl(slm, fl)
+            self.fsim = np.load(self.dirSim+'sim_'+STR4(n)+'_fmap.npy')
             
             if plot:
                 Map = np.copy(self.fsim)
-                if mask:
-                    Map[self.mask==0.] = hp.UNSEEN
-                    Map = hp.ma(Map)
+                Map[self.mask==0.] = hp.UNSEEN
+                Map = hp.ma(Map)
                 title = r'Simulated lensing potential $\phi$'
                 hp.mollview(Map, coord='G', title=title, cbar=True, 
                             unit=r'dimensionless')
-
-
-
+        else:
+            self.kslm = slm
+            self.ksim = np.load(self.dirSim+'sim_'+STR4(n)+'_kmap.npy')
 
 
 

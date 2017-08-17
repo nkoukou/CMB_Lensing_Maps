@@ -3,12 +3,11 @@ Analyses Cold Spot statistics. As of commit 14, the module applies on
 Lensing Maps.
 
 !!!
+ - ask about all !!! in other modules
  - run top-hat, gaussian and maybe elliptical filters
- - find sigmas for all sims and data, add signal-to-noise metrics
- - write func that detects p-value among all filters and pick the most extreme,
-   repeat for data and sims and plot final histogram of that
- - class of stats inheriting map?
+ - implement phi
  
+ - class of stats inheriting map?
  - What about spots half covered by mask? (maybe ignore discs with more than
    half pixels covered?)
 '''
@@ -89,48 +88,83 @@ def selectFilts(sim, phi, scales, alphas, mode):
     if mode=='p': data = data.astype(int)
     return data
 
+def pValue(data, sims, metric):
+    if metric=='s2n':
+        pvalue = sims[sims>data].size/sims.size
+    elif metric=='area':
+        pvalue = sims[sims>data].size/sims.size
+    
+    return pvalue
+
 def histSims(phi, scales, alphas, metric, plot=True):
     '''
-    Returns coldest (!!!) values in terms of signal to noise for data and 
+    Returns most extreme values in terms of signal to noise for data and 
     simulations. Parameters are:
     - phi: bool - if True, uses phi map instead of kappa map
     - scales: container - includes the scales of filters to be considered
     - alphas: container - includes the alphas of filters to be considered
+    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
+                                used
     - plot: bool - if True, plots histogram
     '''
-    data = 0
-    sims = np.zeros(lmr.NSIMS)
+    sims = np.zeros(lmr.NSIMS+1)
     
     if metric=='s2n':
-        sig = selectFilts(lmr.NSIMS, phi, scales, alphas, 's')
-        data = sig.min()
-        for n in range(lmr.NSIMS):
+        for n in range(lmr.NSIMS+1):
             sig = selectFilts(n, phi, scales, alphas, 's')
             if sig.size==0:
-                extremum = 0
+                sims[n] = 0
             else:
-                extremum = sig.min()
-            sims[n] = np.where(extremum<=0, extremum, -0.111)
-        xlabel = r'Signal to noise ratio for Cold Spots'
-        pvalue = sims[sims<data].size/sims.size
+                sims[n] = abs(sig).max()
+        xlabel = r'Signal to noise ratio for Extreme Spots'
     elif metric=='area':
-        ll, bb, cc = plotFlatExtrema(lmr.NSIMS, phi, scales, alphas)
-        data = findArea(ll, bb, cc)
-        for n in range(lmr.NSIMS):
+        for n in range(lmr.NSIMS+1):
             ll, bb, cc = plotFlatExtrema(n, phi, scales, alphas)
             sims[n] = findArea(ll, bb, cc)
         xlabel = r'Number of pixels above threshold of $3\sigma$'
-        pvalue = sims[sims>data].size/sims.size
     
     if plot:
+        pvalue = sims[sims>sims[-1]].size/sims.size
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.hist(sims, bins=BINS, normed=False, color='b')
-        ax.axvline(x=data, color='k', ls='--')
+        ax.hist(sims[:-1], bins=BINS, normed=False, color='b')
+        ax.axvline(x=sims[-1], color='k', ls='--')
         ax.set_xlabel(xlabel)
         ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
         ax.set_title(r'$p=${0:.2f}'.format(pvalue))
-    return data, sims
+    return sims
+
+def histPvals(phi, scales, alphas, metric):
+    '''
+    Plots histogram of p-values from histSims() for all simulations and data.
+    Parameters are:
+    - phi: bool - if True, uses phi map instead of kappa map
+    - scales: container - includes the scales of filters to be considered
+    - alphas: container - includes the alphas of filters to be considered
+    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
+                                used
+    '''
+    scales, alphas = np.array(scales), np.array(alphas)
+    pvalues = np.zeros((scales.size, alphas.size, lmr.NSIMS+1))
+    for s in range(scales.size):
+        print(s)
+        for a in range(alphas.size):
+            sims = histSims(phi, [scales[s]], [alphas[a]], metric, plot=False)
+            for sim in range(sims.size):
+                pvalues[s,a,sim] = sims[sims>sims[sim]].size/sims.size
+    pvalues = pvalues.min((0,1))
+    sims, data = pvalues[:-1], pvalues[-1]
+    pv = pvalues[pvalues<=pvalues[-1]].size/pvalues.size
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hist(sims, bins=BINS, normed=False, color='b')
+    ax.axvline(x=data, color='k', ls='--')
+    ax.set_xlabel(r'Most extreme $p$-value in all filters')
+    ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+    ax.set_title(r'$p=${0:.2f}'.format(pv))
+    
+    return pvalues
 
 def plotFlatExtrema(sim, phi, scales, alphas, gran=360, plot=False):
     '''
@@ -306,10 +340,6 @@ def _saveAllSigma(phi, scales=FR, alphas=FA):
         stop = time.time()
         print('{0:.0f} seconds'.format(stop-start))
     np.save('sigmas', sigmas)
-
-#_saveAllSigma(phi=False)
-#stop = time.time()
-#print('\nEND: {0:.0f} seconds'.format(stop-start))
 
 # Temperature era stats
 def detectCS(Map, mask):

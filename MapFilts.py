@@ -27,7 +27,7 @@ def filterMap(MAP, scale, a, mask, phi, is_sim, lmax=None):
     If mask=True, returns filtered mask as well.
     If is_sim=True, filters simulation MAP.sim instead of the real data.
     
-    !!! same mask used regardless the value of parameter a
+    !!! same mask used regardless the filter (param a or gaussian/top hat)
     '''
     if lmax is not None:
         temp = MAP.lmax
