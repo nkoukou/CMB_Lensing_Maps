@@ -5,6 +5,7 @@ import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
+from matplotlib.colors import ListedColormap
 
 # Global constants and functions
 NSIDES = [2**x for x in range(4, 12)]
@@ -77,8 +78,8 @@ class LensingMap(object):
             self.clff = fl**2 * self.clkk
             print('KMAP')
             
-            #self.kmap = hp.read_map(self.core+'_kmap.fits', verbose=False)
-            #self.klm = hp.read_alm(self.core+'_klm.fits')
+            self.kmap = hp.read_map(self.core+'_kmap.fits', verbose=False)
+            self.klm = hp.read_alm(self.core+'_klm.fits')
             #print('KMAP -> FMAP')
             
             self.fmap = hp.read_map(self.core+'_fmap.fits', verbose=False)
@@ -167,15 +168,23 @@ class LensingMap(object):
         '''
         if phi:
             Map = np.copy(self.fmap)
-            title = r'Lensing potential $\phi$'
+            ttl = r'Lensing potential $\phi$'
+            fmt = '%07.3e'
+            unt = r'$\phi$'
         else:
             Map = np.copy(self.kmap)
-            title = r'Lensing convergence $\kappa$'
+            ttl = r'Lensing convergence $\kappa$'
+            fmt = '%.3f'
+            unt = r'$\kappa$'
         if mask:
             Map[self.mask==0.] = hp.UNSEEN
             Map = hp.ma(Map)
-        hp.mollview(Map, coord='G', title=title+' at res = '+str(self.res), 
-                    cbar=True, unit=r'dimensionless')
+        
+        cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
+        cmap.set_under('w')
+        cmap.set_bad('gray')
+        hp.mollview(Map, title=ttl+' at $N_{side} = 2048$', 
+          format=fmt, cmap=cmap, cbar=True, unit=unt)
     
     def plotSpec(self):
         '''
@@ -208,17 +217,18 @@ class LensingMap(object):
             fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
             self.fslm = hp.almxfl(slm, fl)
             self.fsim = np.load(self.dirSim+'sim_'+STR4(n)+'_fmap.npy')
-            
-            if plot:
-                Map = np.copy(self.fsim)
-                Map[self.mask==0.] = hp.UNSEEN
-                Map = hp.ma(Map)
-                title = r'Simulated lensing potential $\phi$'
-                hp.mollview(Map, coord='G', title=title, cbar=True, 
-                            unit=r'dimensionless')
         else:
             self.kslm = slm
             self.ksim = np.load(self.dirSim+'sim_'+STR4(n)+'_kmap.npy')
+            
+        if plot:
+            if phi: Map = np.copy(self.fsim)
+            else: Map = np.copy(self.ksim)
+            Map[self.mask==0.] = hp.UNSEEN
+            Map = hp.ma(Map)
+            title = r'Simulated lensing potential $\phi$'
+            hp.mollview(Map, coord='G', title=title, cbar=True, 
+                        unit=r'dimensionless')
 
 
 

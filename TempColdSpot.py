@@ -8,6 +8,7 @@ import scipy.signal as ss
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
+from matplotlib.colors import ListedColormap
 import os.path
 
 # Global constants and functions
@@ -214,8 +215,14 @@ class TempMap(object):
         if mask:
             Map[self.mask==0.] = hp.UNSEEN
             Map = hp.ma(Map)
-        hp.mollview(Map, coord='G', title='CMB Temperature', cbar=True, 
-                    unit=r'$K$')
+        
+        fmt = '%07.3e'
+        unt = r'$T$ (K)'
+        cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
+        cmap.set_under('w')
+        cmap.set_bad('gray')
+        hp.mollview(Map, title='CMB Temperature at $N_{side} = 2048$', 
+          format=fmt, cmap=cmap, cbar=True, unit=unt)
 
     def genSim(self, lmax=None, plot=False, mask=False):
         '''

@@ -16,6 +16,7 @@ import astropy as ap
 import healpy as hp
 import scipy.ndimage.measurements as snm
 import matplotlib.pylab as plt
+from matplotlib.colors import ListedColormap
 import LensMapRecon as lmr
 from MapFilts import filterMap
 
@@ -65,7 +66,7 @@ def colatlon2lonlat(coord):
 ###
 
 # Lensing era stats
-def selectFilts(sim, phi, scales, alphas, mode):
+def selectFilts(sim, phi, scales, alphas, mode, debug=False):
     '''
     Returns given filters for given simulation. Parameters are:
     - sim: integer - simulation number to be considered
@@ -80,13 +81,21 @@ def selectFilts(sim, phi, scales, alphas, mode):
     if phi: f = 'f'
     else: f = 'k'
     
+    if debug: Rmax, amax, sigmax = 0, 0, 0
     data = np.array([])
     for R in scales:
         for a in alphas:
             spots = np.load(FNAME(f, R, a, sim, mode))
+            if debug and spots.size!=0:
+                if abs(spots).max()>sigmax:
+                    Rmax, amax, sigmax = R, a, abs(spots).max()
             data = np.concatenate((data, spots))
     if mode=='p': data = data.astype(int)
-    return data
+    
+    if debug:
+        return data, (Rmax, amax, sigmax)
+    else:
+        return data
 
 def pValue(data, sims, metric):
     if metric=='s2n':
@@ -127,14 +136,15 @@ def histSims(phi, scales, alphas, metric, plot=True):
         pvalue = sims[sims>sims[-1]].size/sims.size
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.hist(sims[:-1], bins=BINS, normed=False, color='b')
-        ax.axvline(x=sims[-1], color='k', ls='--')
-        ax.set_xlabel(xlabel)
+        ax.hist(sims[:-1], bins=BINS, normed=False, histtype='step', lw=1.5)
+        ax.axvline(x=sims[-1], color='r', ls='--', label='p = {}'.format(
+                   pvalue))
+        ax.set_title(xlabel, fontsize=14)
         ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
-        ax.set_title(r'$p=${0:.2f}'.format(pvalue))
+        ax.legend(loc='upper right', prop={'size':14})
     return sims
 
-def histPvals(phi, scales, alphas, metric):
+def histPvals(phi, scales, alphas, metric, debug=False):
     '''
     Plots histogram of p-values from histSims() for all simulations and data.
     Parameters are:
@@ -152,19 +162,25 @@ def histPvals(phi, scales, alphas, metric):
             sims = histSims(phi, [scales[s]], [alphas[a]], metric, plot=False)
             for sim in range(sims.size):
                 pvalues[s,a,sim] = sims[sims>sims[sim]].size/sims.size
+    if debug:
+        pmin = pvalues[:,:,-1].min()
+        idx = np.where(pvalues[:,:,-1]==pmin)
+    
     pvalues = pvalues.min((0,1))
     sims, data = pvalues[:-1], pvalues[-1]
     pv = pvalues[pvalues<=pvalues[-1]].size/pvalues.size
     
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    ax.hist(sims, bins=BINS, normed=False, color='b')
-    ax.axvline(x=data, color='k', ls='--')
-    ax.set_xlabel(r'Most extreme $p$-value in all filters')
-    ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
-    ax.set_title(r'$p=${0:.2f}'.format(pv))
+    ax.hist(sims, bins=BINS, normed=False, histtype='step', lw=1.5)
+    ax.axvline(x=data, color='r', ls='--', label='p = {}'.format(pv))
+    ax.set_title(r'Most extreme $p$-values')
+    ax.legend(loc='upper right', prop={'size':14})
     
-    return pvalues
+    if debug:
+        return pvalues, (idx, pmin)
+    else:
+        return pvalues
 
 def plotFlatExtrema(sim, phi, scales, alphas, gran=360, plot=False):
     '''
@@ -189,8 +205,10 @@ def plotFlatExtrema(sim, phi, scales, alphas, gran=360, plot=False):
         cc, ll, bb, img = ax.hist2d(lon, lat, bins=(2*gran,gran), vmin=1, 
           range=[[-180, 180], [-90, 90]], normed=False, cmap=cmap)
         ax.invert_xaxis()
-        ax.set_xlabel('Longitude (deg)')
-        ax.set_ylabel('Polar angle (deg)')
+        ax.set_xlabel('Longitude (deg)', fontsize=14)
+        ax.set_ylabel('Polar angle (deg)', fontsize=14)
+        ax.set_title(r'Filtering at $R = ${0}-{1}, $\alpha = ${2}-{3}'.format(
+          scales.min(), scales.max(), alphas.min(), alphas.max()), fontsize=16)
         cmap = fig.colorbar(img, ax=ax)
     else:
         cc, ll, bb = np.histogram2d(lon, lat, bins=(2*gran,gran), 
@@ -244,9 +262,15 @@ def plotMapExtrema(Map, mask, phi, thresh=3, plot=False, savefig=None):
     if plot:
         newmap[newmask==0.] = hp.UNSEEN
         newmap = hp.ma(newmap)
-        title = r'Spots more extreme than {0}$\sigma$'.format(thresh)
-        hp.mollview(newmap, coord='G', title=title, cbar=True, 
-                    unit='dimensionless')
+        fmt = '%07.3e'
+        unt = r'$\kappa$'
+        ttl = r'Spots more extreme than {0}$\sigma$'.format(thresh)
+        cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
+        cmap.set_under('w')
+        cmap.set_bad('gray')
+        hp.mollview(newmap, title=ttl, 
+          format=fmt, cmap=cmap, cbar=True, unit=unt)
+    
     if savefig is not None:
         s, a = savefig
         if phi: strng = '_f'
@@ -312,8 +336,6 @@ def _plotAllExtrema(phi, sim, scales=FR, alphas=FA, thresh=3,
     else:
         return extrema
 
-#import time
-#start = time.time()
 def _saveAllSigma(phi, scales=FR, alphas=FA):
     sigmas = np.zeros((scales.size, alphas.size,lmr.NSIMS+1))
     
@@ -340,6 +362,10 @@ def _saveAllSigma(phi, scales=FR, alphas=FA):
         stop = time.time()
         print('{0:.0f} seconds'.format(stop-start))
     np.save('sigmas', sigmas)
+
+#import time
+#start = time.time()
+
 
 # Temperature era stats
 def detectCS(Map, mask):

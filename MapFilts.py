@@ -10,6 +10,7 @@ import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
+from matplotlib.colors import ListedColormap
 import os.path
 
 # Global constants and functions
@@ -75,9 +76,14 @@ def plotMap(fmap, fmask, scale, a):
     Map[fmask==0.] = hp.UNSEEN
     Map = hp.ma(Map)
     
-    hp.mollview(Map, title = r'Nside = {0}, scale = {1} deg, a = {2}'.format(
-                res, scale, a))
-    #plt.show()
+    ttl = (r'Filtered map at $(R, \alpha) = $' 
+           r'({0}, {1}) and $N_{{side}} = 2048$'.format(scale, a))
+    fmt = '%07.3e'
+    unt = r'$\kappa$'
+    cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
+    cmap.set_under('w')
+    cmap.set_bad('gray')
+    hp.mollview(Map, title=ttl, format=fmt, cmap=cmap, cbar=True, unit=unt)
 
 # Filters
 def A(R, a):
@@ -105,7 +111,7 @@ def mexHat(R, a, cb):
     # Wavelet function
     W = A(R,a) * J * ( a - 1./RR * yy ) * np.exp( -1./(a*RR) * yy )
     
-    return W #/(a*A(R,a))
+    return W/(a*A(R,a))
 
 # Helper function for mask filtering
 def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
@@ -173,11 +179,26 @@ def _exportWlm(MAP, scales=np.linspace(0.5, 15, 30),
             
             np.save(MAP.core+'_wlm'+STR4(60*s)+STR2(a), fl)
 
-
-
-
-
-
+def _plotWprof():
+    thetas = np.linspace(0,np.pi/2, 10000, endpoint=False)
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    
+    W = mexHat(np.radians(10), 2, thetas)
+    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(102))
+    W = mexHat(np.radians(10), 6, thetas)
+    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(106))
+    W = mexHat(np.radians(15), 2, thetas)
+    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(152))
+    W = mexHat(np.radians(15), 6, thetas)
+    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(156))
+    
+    ax.set_xlabel(r'$\theta$ (deg)', fontsize=14)
+    ax.set_ylabel(r'$W(\theta; R, \alpha)$', fontsize=14)
+    ax.set_xlim([0,90])
+    ax.set_ylim([-0.2,1])
+    ax.legend(loc='upper right', prop={'size':14})
 
 
 
