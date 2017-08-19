@@ -20,7 +20,7 @@ STR2 = lambda res: str(int(res)).zfill(2)
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, a, mask, phi, is_sim, lmax=None):
+def filterMap(MAP, scale, a, is_sim, Gauss=False, mask=True, lmax=None):
     '''
     Filters map at given scale, considering ell components up to given lmax. If 
     lmax = None, the default lmax of the MAP is used.
@@ -34,24 +34,20 @@ def filterMap(MAP, scale, a, mask, phi, is_sim, lmax=None):
         temp = MAP.lmax
         MAP.lmax = lmax
     
-    if is_sim and phi:    
-        Map = MAP.fsim
-        mlm = MAP.fslm
-    elif is_sim and not phi:    
-        Map = MAP.ksim
-        mlm = MAP.kslm
-    elif not is_sim and phi:    
-        Map = MAP.fmap
-        mlm = MAP.flm
-    elif not is_sim and not phi:    
-        Map = MAP.kmap
-        mlm = MAP.klm
-    else:
-        raise ValueError('Check phi and is_sim arguments')
+    if is_sim:    
+        Map = MAP.sim
+        mlm = MAP.slm
+    else:    
+        Map = MAP.map
+        mlm = MAP.alm
     
-    fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
-    convAlm = hp.almxfl(alm=mlm, fl=fl)
-    newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
+    if Gauss:
+        newmap = hp.smoothing(Map, fwhm=np.radians(scale), pol=False, 
+                              verbose=False)
+    else:
+        fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
+        convAlm = hp.almxfl(alm=mlm, fl=fl)
+        newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
         fmask = MAP.core+'_maskFilt'+STR4(60*scale)+'.npy'
@@ -65,15 +61,15 @@ def filterMap(MAP, scale, a, mask, phi, is_sim, lmax=None):
         MAP.lmax = temp
     return newmap
 
-def plotMap(fmap, fmask, scale, a):
+def plotMap(filtmap, filtmask, scale, a):
     '''
     Plots given map with given mask. Both must have already been filtered at 
     given scale and a.
     '''
-    res = hp.npix2nside(fmap.size)
+    res = hp.npix2nside(filtmap.size)
     
-    Map = np.copy(fmap)
-    Map[fmask==0.] = hp.UNSEEN
+    Map = np.copy(filtmap)
+    Map[filtmask==0.] = hp.UNSEEN
     Map = hp.ma(Map)
     
     ttl = (r'Filtered map at $(R, \alpha) = $' 
@@ -111,7 +107,13 @@ def mexHat(R, a, cb):
     # Wavelet function
     W = A(R,a) * J * ( a - 1./RR * yy ) * np.exp( -1./(a*RR) * yy )
     
-    return W/(a*A(R,a))
+    return W
+
+def topHat(R, cb):
+    '''!!!
+    Computes spherical top-hat function for scale R and array of colatitudes cb.
+    '''
+    A = 3/(4*np.pi*R**3)
 
 # Helper function for mask filtering
 def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):

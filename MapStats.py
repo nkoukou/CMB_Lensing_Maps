@@ -4,12 +4,12 @@ Lensing Maps.
 
 !!!
  - ask about all !!! in other modules
- - run top-hat, gaussian and maybe elliptical filters
- - implement phi
- 
- - class of stats inheriting map?
  - What about spots half covered by mask? (maybe ignore discs with more than
    half pixels covered?)
+   
+ - run top-hat
+ 
+ - class of stats inheriting map?
 '''
 import numpy as np
 import astropy as ap
@@ -21,7 +21,7 @@ import LensMapRecon as lmr
 from MapFilts import filterMap
 
 # Global constants and functions
-MAP = lmr.LensingMap(2048)
+MAP = lmr.LensingMap(False, 2048)
 
 DIRFIG = 'Figures/LensSignificance/'
 DIRRES = 'CMBL_Maps/results/'
@@ -66,7 +66,7 @@ def colatlon2lonlat(coord):
 ###
 
 # Lensing era stats
-def selectFilts(sim, phi, scales, alphas, mode, debug=False):
+def selectFilts(sim, scales, alphas, mode, debug=False):
     '''
     Returns given filters for given simulation. Parameters are:
     - sim: integer - simulation number to be considered
@@ -78,7 +78,7 @@ def selectFilts(sim, phi, scales, alphas, mode, debug=False):
                          respectively
     '''
     scales = (60*np.array(scales)).astype(int)
-    if phi: f = 'f'
+    if MAP.phi: f = 'f'
     else: f = 'k'
     
     if debug: Rmax, amax, sigmax = 0, 0, 0
@@ -105,11 +105,10 @@ def pValue(data, sims, metric):
     
     return pvalue
 
-def histSims(phi, scales, alphas, metric, plot=True):
+def histSims(scales, alphas, metric, plot=True):
     '''
     Returns most extreme values in terms of signal to noise for data and 
     simulations. Parameters are:
-    - phi: bool - if True, uses phi map instead of kappa map
     - scales: container - includes the scales of filters to be considered
     - alphas: container - includes the alphas of filters to be considered
     - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
@@ -120,7 +119,7 @@ def histSims(phi, scales, alphas, metric, plot=True):
     
     if metric=='s2n':
         for n in range(lmr.NSIMS+1):
-            sig = selectFilts(n, phi, scales, alphas, 's')
+            sig = selectFilts(n, scales, alphas, 's')
             if sig.size==0:
                 sims[n] = 0
             else:
@@ -128,7 +127,7 @@ def histSims(phi, scales, alphas, metric, plot=True):
         xlabel = r'Signal to noise ratio for Extreme Spots'
     elif metric=='area':
         for n in range(lmr.NSIMS+1):
-            ll, bb, cc = plotFlatExtrema(n, phi, scales, alphas)
+            ll, bb, cc = plotFlatExtrema(n, scales, alphas)
             sims[n] = findArea(ll, bb, cc)
         xlabel = r'Number of pixels above threshold of $3\sigma$'
     
@@ -144,11 +143,10 @@ def histSims(phi, scales, alphas, metric, plot=True):
         ax.legend(loc='upper right', prop={'size':14})
     return sims
 
-def histPvals(phi, scales, alphas, metric, debug=False):
+def histPvals(scales, alphas, metric, debug=False):
     '''
     Plots histogram of p-values from histSims() for all simulations and data.
     Parameters are:
-    - phi: bool - if True, uses phi map instead of kappa map
     - scales: container - includes the scales of filters to be considered
     - alphas: container - includes the alphas of filters to be considered
     - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
@@ -159,7 +157,7 @@ def histPvals(phi, scales, alphas, metric, debug=False):
     for s in range(scales.size):
         print(s)
         for a in range(alphas.size):
-            sims = histSims(phi, [scales[s]], [alphas[a]], metric, plot=False)
+            sims = histSims([scales[s]], [alphas[a]], metric, plot=False)
             for sim in range(sims.size):
                 pvalues[s,a,sim] = sims[sims>sims[sim]].size/sims.size
     if debug:
@@ -182,14 +180,14 @@ def histPvals(phi, scales, alphas, metric, debug=False):
     else:
         return pvalues
 
-def plotFlatExtrema(sim, phi, scales, alphas, gran=360, plot=False):
+def plotFlatExtrema(sim, scales, alphas, gran=360, plot=False):
     '''
     Returns 2D histogram of the sky with the number of pixels above the 
     threshold, stacking filters in the given range of scales and alphas and 
     binning with given granularity gran in x and y axes (2*gran, gran) as well 
     as plotting if plot=True.
     '''
-    pixs = selectFilts(sim, phi, scales, alphas, 'p')
+    pixs = selectFilts(sim, scales, alphas, 'p')
     
     count = np.bincount(pixs)
     count = np.repeat( np.arange(count.size), count )
@@ -243,7 +241,7 @@ def findArea(ll, bb, cc, coord=False):
     
     return area
 
-def plotMapExtrema(Map, mask, phi, thresh=3, plot=False, savefig=None):
+def plotMapExtrema(Map, mask, thresh=3, plot=False, savefig=None):
     '''
     Plots map with only unmasked pixels the ones above thresh * std of 
     Map[mask==1] and returns these pixels along with their significance. Plots 
@@ -273,7 +271,7 @@ def plotMapExtrema(Map, mask, phi, thresh=3, plot=False, savefig=None):
     
     if savefig is not None:
         s, a = savefig
-        if phi: strng = '_f'
+        if MAP.phi: strng = '_f'
         else: strng = '_k'
         fname = DIRFIG+STR4(60*s)+'_'+STR2(a)+strng
         plt.savefig(fname)
@@ -283,12 +281,11 @@ def plotMapExtrema(Map, mask, phi, thresh=3, plot=False, savefig=None):
     sig = Map[newmask==1.]/sigma
     return pixs, sig
 
-def _plotAllExtrema(phi, sim, scales=FR, alphas=FA, thresh=3, 
+def _plotAllExtrema(sim, scales=FR, alphas=FA, thresh=3, 
                     savefig=None, saveres=False):
     '''
     Saves or returns all extreme spots (in the form of pixels) along with their 
     significance of given map. Parameters:
-      - phi: bool - if True, uses phi map instead of kappa map
       - sim: int - indicates simulation number to be used. Real data are 
                    represented by 99.
       - scales, alphas: array - indicate the scale and alpha parameters to be 
@@ -303,7 +300,7 @@ def _plotAllExtrema(phi, sim, scales=FR, alphas=FA, thresh=3,
     extrema = np.zeros((2, scales.size, alphas.size, 1))
             
     if sim in np.arange(lmr.NSIMS):
-        MAP.loadSim(sim, phi)
+        MAP.loadSim(sim)
         is_sim = True
     elif sim==99:
         is_sim = False
@@ -317,9 +314,8 @@ def _plotAllExtrema(phi, sim, scales=FR, alphas=FA, thresh=3,
             if savefig is not None:
                 savefig = (scales[i], alphas[j])
             
-            Map, mask = filterMap(MAP, scales[i], alphas[j], mask=True, phi=phi,
-                                  is_sim=is_sim)
-            pixs, sig = plotExtrema(Map, mask, phi, thresh, savefig)
+            Map, mask = filterMap(MAP, scales[i], alphas[j], is_sim=is_sim)
+            pixs, sig = plotExtrema(Map, mask, thresh, savefig)
             
             diff = extrema.shape[-1] - pixs.size
             if diff>=0:
@@ -336,14 +332,13 @@ def _plotAllExtrema(phi, sim, scales=FR, alphas=FA, thresh=3,
     else:
         return extrema
 
-def _saveAllSigma(phi, scales=FR, alphas=FA):
+def _saveAllSigma(scales=FR, alphas=FA):
     sigmas = np.zeros((scales.size, alphas.size,lmr.NSIMS+1))
     
     for i in range(scales.size):
         for j in range(alphas.size):
             print('R, a =', scales[i], ', ', alphas[j])
-            Map, mask = filterMap(MAP, scales[i], alphas[j], mask=True, 
-                                  phi=phi, is_sim=False)
+            Map, mask = filterMap(MAP, scales[i], alphas[j], is_sim=False)
             data = Map[mask==1.]
             sigma = data.std()
             sigmas[i,j,-1] = sigma
@@ -354,8 +349,7 @@ def _saveAllSigma(phi, scales=FR, alphas=FA):
             for j in range(alphas.size):
                 print('R, a =', scales[i], ', ', alphas[j])
                 MAP.loadSim(s, False)
-                Map, mask = filterMap(MAP, scales[i], alphas[j], mask=True, 
-                                      phi=phi, is_sim=True)
+                Map, mask = filterMap(MAP, scales[i], alphas[j], is_sim=True)
                 data = Map[mask==1.]
                 sigma = data.std()
                 sigmas[i,j,s] = sigma
@@ -363,9 +357,34 @@ def _saveAllSigma(phi, scales=FR, alphas=FA):
         print('{0:.0f} seconds'.format(stop-start))
     np.save('sigmas', sigmas)
 
-#import time
-#start = time.time()
-
+import time
+def _saveAllExtrema(Gauss, scales=FR, alphas=FA):
+    extrema = np.zeros((2, 2, scales.size, alphas.size,lmr.NSIMS+1))
+    start = time.time()
+    
+    for phi in [0,1]:
+        print('phi', phi)            
+        MAP = lmr.LensingMap(phi, 2048)
+        for sim in range(lmr.NSIMS+1):
+            print('sim', sim)
+            MAP.loadSim(sim)
+            
+            stop = time.time()
+            print('{0:.0f} seconds'.format(stop-start))
+            start = stop
+            
+            for s in range(scales.size):
+                for a in range(alphas.size):
+                    Map, mask = filterMap(MAP, scales[s], alphas[a], 
+                                          is_sim=True, Gauss=Gauss)
+            
+                    data = Map[mask==1.]
+                    extrema[0,phi,s,a,sim] = data.max()
+                    extrema[1,phi,s,a,sim] = data.min()
+            if sim%3==0: 
+                np.save(DIRRES+'extremaGauss', extrema)
+                print('SAVED')
+    return extrema
 
 # Temperature era stats
 def detectCS(Map, mask):
@@ -421,7 +440,7 @@ def chooseSims(radius, nsims=99, plot=True):
     
     temps = []
     moments = np.zeros((4, nsims+1))
-    moments[:,0] = calcStats(coord, radius, MAP.kmap, MAP.mask)
+    moments[:,0] = calcStats(coord, radius, MAP.map, MAP.mask)
     count = 1
     while len(temps)<nsims:
         if count%10==0: print(count)
