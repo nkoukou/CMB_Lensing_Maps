@@ -11,6 +11,7 @@ Lensing Maps.
  
  - class of stats inheriting map?
 '''
+import time
 import numpy as np
 import astropy as ap
 import healpy as hp
@@ -130,6 +131,18 @@ def histSims(scales, alphas, metric, plot=True):
             ll, bb, cc = plotFlatExtrema(n, scales, alphas)
             sims[n] = findArea(ll, bb, cc)
         xlabel = r'Number of pixels above threshold of $3\sigma$'
+    elif metric=='sigf' or metric=='sigk':
+        if metric=='sigf': phi = 0
+        else: phi = 1
+        
+        idxR = np.where( np.isin(FR, scales) )
+        idxa = np.where( np.isin(FA, alphas) )
+        
+        sims = np.load(MAP.dir+'results/extrema.npy')[:, phi, idxR, idxa, :]
+        sims = abs(sims)
+        sims = sims.max((0,1,2))
+        phi = [r'$\kappa$', r'$\phi$'][phi]
+        xlabel = r'Absolute signal for Extreme Spots'
     
     if plot:
         pvalue = sims[sims>sims[-1]].size/sims.size
@@ -357,7 +370,6 @@ def _saveAllSigma(scales=FR, alphas=FA):
         print('{0:.0f} seconds'.format(stop-start))
     np.save('sigmas', sigmas)
 
-import time
 def _saveAllExtrema(Gauss, scales=FR, alphas=FA):
     extrema = np.zeros((2, 2, scales.size, alphas.size,lmr.NSIMS+1))
     start = time.time()
@@ -375,6 +387,7 @@ def _saveAllExtrema(Gauss, scales=FR, alphas=FA):
             
             for s in range(scales.size):
                 for a in range(alphas.size):
+                    print('R:', scales[s])
                     Map, mask = filterMap(MAP, scales[s], alphas[a], 
                                           is_sim=True, Gauss=Gauss)
             

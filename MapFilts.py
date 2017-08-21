@@ -42,8 +42,12 @@ def filterMap(MAP, scale, a, is_sim, Gauss=False, mask=True, lmax=None):
         mlm = MAP.alm
     
     if Gauss:
-        newmap = hp.smoothing(Map, fwhm=np.radians(scale), pol=False, 
-                              verbose=False)
+        sigma = np.radians(scale) / (2.*np.sqrt(2.*np.log(2.)))
+        ell = np.arange(MAP.lmax + 1.)
+        
+        fl = np.exp(-0.5 * ell * (ell + 1) * sigma ** 2)
+        convAlm = hp.almxfl(alm=mlm, fl=fl)
+        newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     else:
         fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
         convAlm = hp.almxfl(alm=mlm, fl=fl)
