@@ -28,7 +28,7 @@ DIRFIG = 'Figures/LensSignificance/'
 DIRRES = 'CMBL_Maps/results/'
 
 FR = np.linspace(0.5, 15, 30)
-FA = np.linspace(1,10,10)
+FA = np.linspace(0,10,11)
 
 BINS = 10
 MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis')
@@ -106,7 +106,7 @@ def pValue(data, sims, metric):
     
     return pvalue
 
-def histSims(scales, alphas, metric, plot=True):
+def histSims(scales, alphas, metric, plot=True, debug=False):
     '''
     Returns most extreme values in terms of signal to noise for data and 
     simulations. Parameters are:
@@ -138,11 +138,18 @@ def histSims(scales, alphas, metric, plot=True):
         idxR = np.where( np.isin(FR, scales) )
         idxa = np.where( np.isin(FA, alphas) )
         
-        sims = np.load(MAP.dir+'results/extrema.npy')[:, phi, idxR, idxa, :]
+        sims = np.load(MAP.dir+'results/extremaTot.npy')[:, phi, idxR, idxa, :]
         sims = abs(sims)
+        
+        if debug:
+            idx = np.where(sims==sims[:,:,:,-1].max())
+            filters = [scales[idx[1]], alphas[idx[2]]]
+        
         sims = sims.max((0,1,2))
         phi = [r'$\kappa$', r'$\phi$'][phi]
         xlabel = r'Absolute signal for Extreme Spots'
+    else:
+        raise ValueError('Check the metric')
     
     if plot:
         pvalue = sims[sims>sims[-1]].size/sims.size
@@ -154,7 +161,9 @@ def histSims(scales, alphas, metric, plot=True):
         ax.set_title(xlabel, fontsize=14)
         ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
         ax.legend(loc='upper right', prop={'size':14})
-    return sims
+    
+    if debug: return sims, filters
+    else: return sims
 
 def histPvals(scales, alphas, metric, debug=False):
     '''
@@ -173,13 +182,17 @@ def histPvals(scales, alphas, metric, debug=False):
             sims = histSims([scales[s]], [alphas[a]], metric, plot=False)
             for sim in range(sims.size):
                 pvalues[s,a,sim] = sims[sims>sims[sim]].size/sims.size
-    if debug:
-        pmin = pvalues[:,:,-1].min()
-        idx = np.where(pvalues[:,:,-1]==pmin)
     
-    pvalues = pvalues.min((0,1))
-    sims, data = pvalues[:-1], pvalues[-1]
-    pv = pvalues[pvalues<=pvalues[-1]].size/pvalues.size
+    filters = []
+    pvmins = pvalues.min((0,1))
+    for i in range(pvmins.size):
+        idxs = np.where(pvalues[:,:,i]==pvmins[i])
+        scale = scales[np.array(idxs[0])]
+        alpha = alphas[np.array(idxs[1])]
+        filters.append([scale, alpha])
+    
+    sims, data = pvmins[:-1], pvmins[-1]
+    pv = pvmins[pvmins<=pvmins[-1]].size/pvmins.size
     
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -188,10 +201,7 @@ def histPvals(scales, alphas, metric, debug=False):
     ax.set_title(r'Most extreme $p$-values')
     ax.legend(loc='upper right', prop={'size':14})
     
-    if debug:
-        return pvalues, (idx, pmin)
-    else:
-        return pvalues
+    return pvmins, filters
 
 def plotFlatExtrema(sim, scales, alphas, gran=360, plot=False):
     '''
@@ -370,7 +380,7 @@ def _saveAllSigma(scales=FR, alphas=FA):
         print('{0:.0f} seconds'.format(stop-start))
     np.save('sigmas', sigmas)
 
-def _saveAllExtrema(Gauss, scales=FR, alphas=FA):
+def _saveAllExtrema(scales=FR, alphas=FA):
     extrema = np.zeros((2, 2, scales.size, alphas.size,lmr.NSIMS+1))
     start = time.time()
     
@@ -388,8 +398,7 @@ def _saveAllExtrema(Gauss, scales=FR, alphas=FA):
             for s in range(scales.size):
                 for a in range(alphas.size):
                     print('R:', scales[s])
-                    Map, mask = filterMap(MAP, scales[s], alphas[a], 
-                                          is_sim=True, Gauss=Gauss)
+                    Map, mask = filterMap(MAP, scales[s], alphas[a],is_sim=True)
             
                     data = Map[mask==1.]
                     extrema[0,phi,s,a,sim] = data.max()

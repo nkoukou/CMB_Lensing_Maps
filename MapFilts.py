@@ -20,7 +20,7 @@ STR2 = lambda res: str(int(res)).zfill(2)
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, a, is_sim, Gauss=False, mask=True, lmax=None):
+def filterMap(MAP, scale, a, is_sim, mask=True, lmax=None):
     '''
     Filters map at given scale, considering ell components up to given lmax. If 
     lmax = None, the default lmax of the MAP is used.
@@ -41,7 +41,7 @@ def filterMap(MAP, scale, a, is_sim, Gauss=False, mask=True, lmax=None):
         Map = MAP.map
         mlm = MAP.alm
     
-    if Gauss:
+    if not a:
         sigma = np.radians(scale) / (2.*np.sqrt(2.*np.log(2.)))
         ell = np.arange(MAP.lmax + 1.)
         
