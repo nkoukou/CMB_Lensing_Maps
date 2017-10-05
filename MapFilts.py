@@ -49,7 +49,13 @@ def filterMap(MAP, scale, a, is_sim, mask=True, lmax=None):
         convAlm = hp.almxfl(alm=mlm, fl=fl)
         newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     else:
-        fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
+        R = np.radians(scale)
+        W = mexHat(R, a, MAP.cb)
+        wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
+    
+        ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
+        fl = ellFac * np.conj(wlm)
+        #fl = np.load(MAP.core+'_wlm'+STR4(60*scale)+STR2(a)+'.npy')
         convAlm = hp.almxfl(alm=mlm, fl=fl)
         newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
@@ -136,14 +142,14 @@ def _filterMask(MAP, scale, W, ellFac, m1Fac=2, m2bd=0.1):
     # Isolate Galactic plane
     aux = np.copy(MAP.maskGal)
     
-    # Find and extend boundaries by twice the aperture
+    # Find and extend boundaries by once the aperture
     m1 = np.copy(aux)
     
     for pix in np.where(m1==0)[0]:
         if 1 not in m1[hp.get_all_neighbours(MAP.res, pix)]:
             continue
         vec = hp.pix2vec(MAP.res, pix)
-        pixs = hp.query_disc(MAP.res, vec, m1Fac*R)
+        pixs = hp.query_disc(MAP.res, vec, m1Fac*2*R) # facter of 2 !!!
         m1[pixs] = 0
     
     # Convolve with SMHW

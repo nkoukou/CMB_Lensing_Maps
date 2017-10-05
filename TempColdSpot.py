@@ -8,14 +8,13 @@ import scipy.signal as ss
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
-from matplotlib.colors import ListedColormap
 import os.path
 
 # Global constants and functions
 DIRMAP = 'CMBT_Maps/COM_CMB_IQU-smica-field-Int_2048_R2.01_full.fits'
 DIRPOW = 'CMBT_Maps/COM_PowerSpect_CMB-base-plikHM-TT-lowTEB-minimum-theory_R2.02.txt'
 
-COORDCS = (210, -57) #lon, lat in degrees in Galactic coordinates
+COORDCS = (210., -57.) #lon, lat in degrees in Galactic coordinates
 BEAM = 5./60 * np.pi/180 #radians
 
 NSIDES = [2**x for x in range(4, 12)]
@@ -48,14 +47,11 @@ class TempMap(object):
             
         elif res in NSIDES:
             self.map=hp.read_map(self.dir+STR(res)+'_map.fits', verbose=False)
-            print('MAP')
-            self.alm = hp.read_alm(self.dir+STR(res)+'_alm.fits')
-            print('ALM')
+            #self.alm = hp.read_alm(self.dir+STR(res)+'_alm.fits')
             #self.cl = hp.read_cl(self.dir+STR(res)+'_cl.fits')
             #print('CL')
             
             self.mask=hp.read_map(self.dir+STR(res)+'_mask.fits', verbose=False)
-            print('MASK')
             #self.malm = hp.read_alm(self.dir+STR(res)+'_malm.fits')
             #print('MALM')
             #self.mcl = hp.read_cl(self.dir+STR(res)+'_mcl.fits')
@@ -207,7 +203,7 @@ class TempMap(object):
         
         return pixs
     
-    def plotMap(self, mask=False):
+    def plotMap(self, mask=True):
         '''
         Plots map including mask if True.
         '''
@@ -215,14 +211,8 @@ class TempMap(object):
         if mask:
             Map[self.mask==0.] = hp.UNSEEN
             Map = hp.ma(Map)
-        
-        fmt = '%07.3e'
-        unt = r'$T$ (K)'
-        cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
-        cmap.set_under('w')
-        cmap.set_bad('gray')
-        hp.mollview(Map, title='CMB Temperature at $N_{side} = 2048$', 
-          format=fmt, cmap=cmap, cbar=True, unit=unt)
+        hp.mollview(Map, coord='G', title='CMB Temperature', cbar=True, 
+                    unit=r'$K$')
 
     def genSim(self, lmax=None, plot=False, mask=False):
         '''

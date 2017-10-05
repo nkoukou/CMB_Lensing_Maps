@@ -19,10 +19,11 @@ import scipy.ndimage.measurements as snm
 import matplotlib.pylab as plt
 from matplotlib.colors import ListedColormap
 import LensMapRecon as lmr
+import TempColdSpot as tcs
 from MapFilts import filterMap
 
 # Global constants and functions
-MAP = lmr.LensingMap(False, 2048)
+MAP = lmr.LensingMap(False, conserv=False, res=2048)
 
 DIRFIG = 'Figures/LensSignificance/'
 DIRRES = 'CMBL_Maps/results/'
@@ -48,7 +49,7 @@ def lonlat2colatlon(coord):
         if lon<0: lon +=360
     else:
         lon[lon<0] +=360
-    cb, lon = np.radians(90-lat), np.radians(lon)
+    cb, lon = np.radians((90-lat)%180), np.radians(lon)
     return cb, lon
 
 def colatlon2lonlat(coord):
@@ -64,6 +65,141 @@ def colatlon2lonlat(coord):
         lon[lon>180] -=360
     return lon, lat
 
+def testTable(conserv):
+    if conserv: strng = 'C'
+    else: strng = 'A'
+    area, skew, vark, varp = np.zeros(100), np.zeros(100), np.zeros(100), np.zeros(100)
+    MAP = lmr.LensingMap(phi=False, conserv=conserv, res=2048)
+    for s in range(lmr.NSIMS+1):
+        print('SIM:', s, strng)
+        MAP.loadSim(s)
+        newmap, newmask = filterMap(MAP, scale=10/60, a=2, is_sim=True)
+        sample = newmap[newmask==1.]
+        
+        N = sample.size
+        mean = sample.mean()
+        var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
+        skew[s] = 1./(N*var**3) * ((sample-mean)**3).sum()
+        lbc = plotFlatExtrema(0, np.array([10]), np.array([2]))
+        area[s] = findArea(*lbc)
+        np.save('CMBL_Maps/test/TESTskew'+strng, skew)
+        np.save('CMBL_Maps/test/TESTarea'+strng, area)
+        
+        
+        newmap, newmask = filterMap(MAP, scale=1000/60, a=2, is_sim=True)
+        sample = newmap[newmask==1.]
+        N = sample.size
+        mean = sample.mean()
+        vark[s]  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
+        np.save('CMBL_Maps/test/TESTvark'+strng, vark)
+    
+    print('phi')
+    MAP = lmr.LensingMap(phi=True, conserv=conserv, res=2048)
+    for s in range(lmr.NSIMS+1):
+        print('SIM:', s, strng)
+        MAP.loadSim(s)
+        newmap, newmask = filterMap(MAP, scale=1000/60, a=2, is_sim=True)
+        sample = newmap[newmask==1.]
+        N = sample.size
+        mean = sample.mean()
+        varp[s]  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
+        np.save('CMBL_Maps/test/TESTvarp'+strng, varp)
+
+def _testTable():
+    testTable(True)
+    testTable(False)
+
+def testFig6(conserv):
+    if conserv: strng = 'C'
+    else: strng = 'A'
+    tcoord = lonlat2colatlon(tcs.COORDCS)
+    MAP = tcs.TempMap(2048)
+    tmap, tmask = MAP.map, MAP.mask
+    tsigma = tmap[tmask==1.].std()
+    MAP = lmr.LensingMap(phi=False, conserv=conserv, res=2048)
+    kmap, kmask = MAP.map, MAP.mask
+    ksigma = kmap[kmask==1.].std()
+    MAP = lmr.LensingMap(phi=True, conserv=conserv, res=2048)
+    lmap, lmask = MAP.map, MAP.mask
+    lsigma = lmap[lmask==1.].std()
+    
+    averages = np.zeros((3, 200))
+    i=0
+    for radius in np.linspace(0.2, 40, 200):
+        print('R:', radius)
+        pixs = getDisk(tcoord, radius, tmask)
+        averages[0,i] = tmap[pixs].mean()
+        pixs = getDisk(tcoord, radius, kmask)
+        averages[1,i] = kmap[pixs].mean()
+        pixs = getDisk(tcoord, radius, lmask)
+        averages[2,i] = lmap[pixs].mean()
+        
+        i +=1
+    np.save('CMBL_Maps/test/tsigma'+strng, tsigma)
+    np.save('CMBL_Maps/test/ksigma'+strng, ksigma)
+    np.save('CMBL_Maps/test/lsigma'+strng, lsigma)
+    np.save('CMBL_Maps/test/averages'+strng, averages)
+
+def xCorrelate(radius):
+    '''
+    Correlates temperature Cold Spot with lensing map.
+    '''
+    tmap = tcs.TempMap(MAP.res)
+    tcoord = lonlat2colatlon(tcs.COORDCS)
+    tpixs = getDisk(tcoord, radius)
+    
+    pixs = [tpixs] #Rotate whole map so that all pixs have equal size and all centres are tcs.COORCS
+    lenslons = np.arange(tcs.COORDCS[0], tcs.COORDCS[0]+360, 2*radius)%360
+    lenslats = np.arange(tcs.COORDCS[1], tcs.COORDCS[1]+180, 2*radius)%180
+    for lon in lenslons:
+        for lat in lenslats:
+            lcoord = lonlat2colatlon((lon, lat))
+            lpixs = getDisk(lcoord, radius)
+            print(lpixs.size)
+            pixs.append(lpixs)
+        
+    return pixs
+
+def getDisk(centre, radius, mask=None, edge=False):
+    '''
+    Returns pixels within the disk of given centre and radius on any map, 
+    excluding the boundaries. Only unmasked pixels by given mask are returned.
+    '''
+    R = np.radians(radius)
+    cb, lon = centre
+    VEC = hp.ang2vec(cb, lon, lonlat=False)
+    pixs = hp.query_disc(MAP.res, vec=VEC, radius=R, inclusive=edge)
+    if mask is not None: pixs = pixs[np.where(mask[pixs]==1.)]
+    return pixs
+
+
+def _testRes1(num):
+    data = np.zeros((2,3,num))
+    for p in [0,1]:
+        for s in range(num):
+            print(p,s)
+            MAP.loadSim(s)
+            sample = MAP.sim[MAP.mask==1.]
+            
+            N = sample.size
+            mean = 1./N * sample.sum()
+            var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
+            skew = 1./(N*var**3) * ((sample-mean)**3).sum()
+            kur  = 1./(N*var**4) * ((sample-mean)**4).sum() - 3
+            
+            data[p,0,s] = var; data[p,1,s] = skew; data[p,2,s] = kur
+    fig = plt.figure()
+    
+    for p in [0,1]:
+        for i in range(3):
+            ax = fig.add_subplot(p+1,3,i+1)
+            ax.hist(data[p,i,:-1], bins=10, normed=False, color='b')
+            ax.axvline(x=data[p,i,-1], color='r', ls='--')
+            ax.set_xlabel(MOMENTS[i+1])
+
+            ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+    fig.tight_layout()
+    return data
 ###
 
 # Lensing era stats
@@ -87,6 +223,9 @@ def selectFilts(sim, scales, alphas, mode, debug=False):
     for R in scales:
         for a in alphas:
             spots = np.load(FNAME(f, R, a, sim, mode))
+            if mode=='p':
+                test = np.load(FNAME(f, R, a, sim, 's'))
+                spots = spots[test<-4.]
             if debug and spots.size!=0:
                 if abs(spots).max()>sigmax:
                     Rmax, amax, sigmax = R, a, abs(spots).max()
@@ -406,7 +545,7 @@ def _saveAllExtrema(scales=FR, alphas=FA):
             if sim%3==0: 
                 np.save(DIRRES+'extremaGauss', extrema)
                 print('SAVED')
-    return extrema
+    return extrema    
 
 # Temperature era stats
 def detectCS(Map, mask):
@@ -426,18 +565,6 @@ def detectES(Map, mask):
     pix = np.where(Map==abs(Map)[mask==1].max())[0][0]
     coord = hp.pix2ang(nside=MAP.res, ipix=pix)
     return coord
-
-def getDisk(centre, radius, mask):
-    '''
-    Returns pixels within the disk of given centre and radius on any map, 
-    excluding the boundaries. Only unmasked pixels by given mask are returned.
-    '''
-    R = np.radians(radius)
-    cb, lon = centre
-    VEC = hp.ang2vec(cb, lon, lonlat=False)
-    pixs = hp.query_disc(MAP.res, vec=VEC, radius=R, inclusive=False)
-    pixs = pixs[np.where(mask[pixs]==1.)]
-    return pixs
 
 def calcStats(pixs, Map, mask):
     '''

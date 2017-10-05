@@ -27,12 +27,14 @@ class LensingMap(object):
     Represents the CMB Lensing Map of the Planck 2015 data release (ref. Planck
     2015 results XV. Gravitational lensing).
     """
-    def __init__(self, phi, res=2048):
+    def __init__(self, phi, conserv=False, res=2048):
         '''        
         Reads the lensing map of given resolution from expected directory. Then,
         all necessary secondary data are also loaded (e.g. mask). If res=None, 
         the original .fits file is read with resolution 2048. 
         '''
+        self.conserv = conserv
+        
         self.dir = 'CMBL_Maps/'
         self.core = self.dir + 'data/n' + STR4(res)
         self.dirSim = self.dir + 'sims/obs_klms/'
@@ -86,12 +88,17 @@ class LensingMap(object):
             else:
                 self.map = hp.read_map(self.core+'_fmap.fits', verbose=False)
                 self.alm = hp.read_alm(self.core+'_flm.fits')
+            
+            if self.conserv:
+                fl = np.concatenate(( np.zeros(40), np.ones(361), np.zeros(1648) ))
+                hp.almxfl(self.alm, fl, inplace=True)
+                self.map = hp.alm2map(self.alm, self.res, pol=False, verbose=False)
             self.sim = None
             
             self.mask = hp.read_map(self.core+'_mask.fits', verbose=False)
             #self.malm = hp.read_alm(self.core+'_malm.fits')
             
-            #self.maskGal = hp.read_map(self.core+'_maskGal.fits',verbose=False)
+            self.maskGal = hp.read_map(self.core+'_maskGal.fits',verbose=False)
             #self.malmGal = hp.read_alm(self.core+'_malmGal.fits')
             
         else:
@@ -197,6 +204,28 @@ class LensingMap(object):
         ax.set_xlabel(r'$L$')  
         ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
     
+    def plotNoisySpec(self, sims):
+        '''
+        Compares power spectrum of given simulations with data.
+        '''
+        print('START')
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        
+        clm = hp.anafast(self.map, pol=False)
+        cl = [clm]
+        ax.plot(clm, 'k.', label='Data')
+        for s in sims:
+            print(s)
+            self.loadSim(s)
+            print('CL')
+            cls = hp.anafast(self.sim, pol=False)
+            cl.append(cls)
+            ax.plot(cls, '.', label='Sim '+str(s))
+        ax.set_title('Kappa Power Spectrum')
+        ax.legend(loc='upper right', prop={'size':14})
+        return cl
+    
     def loadSim(self, n, plot=False):
         '''
         Loads the n-th simulation in directory self.dirSim.
@@ -220,6 +249,11 @@ class LensingMap(object):
         else:
             self.slm = slm
             self.sim = np.load(self.dirSim+'sim_'+STR4(n)+'_kmap.npy')
+        
+        if self.conserv:
+            fl = np.concatenate(( np.zeros(40), np.ones(361), np.zeros(1648) ))
+            hp.almxfl(self.slm, fl, inplace=True)
+            self.sim = hp.alm2map(self.slm, self.res, pol=False, verbose=False)
             
         if plot:
             Map = np.copy(self.sim)
