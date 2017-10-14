@@ -23,7 +23,7 @@ import TempColdSpot as tcs
 from MapFilts import filterMap
 
 # Global constants and functions
-MAP = lmr.LensingMap(False, conserv=False, res=2048)
+#MAP = lmr.LensingMap(False, conserv=False, res=2048)
 
 DIRFIG = 'Figures/LensSignificance/'
 DIRRES = 'CMBL_Maps/results/'

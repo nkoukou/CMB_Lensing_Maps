@@ -1,7 +1,5 @@
 """
 Reconstruction of CMB Lensing Map from Planck 2015 data release.
-
-As of commit 27 underscored methods are depricated.
 """
 import numpy as np
 import astropy as ap
@@ -10,6 +8,10 @@ import matplotlib.pylab as plt
 from matplotlib.colors import ListedColormap
 
 # Global constants and functions
+DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
+RAWSPEC = np.loadtxt(DIR+'data/aux/nlkk.dat')
+CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
+
 NSIDES = [2**x for x in range(4, 12)]
 NSIMS = 99
 
@@ -33,32 +35,28 @@ class LensingMap(object):
         all necessary secondary data are also loaded (e.g. mask). If res=None, 
         the original .fits file is read with resolution 2048. 
         '''
-        self.conserv = conserv
-        
-        self.dir = 'CMBL_Maps/'
-        self.core = self.dir + 'data/n' + STR4(res)
-        self.dirSim = self.dir + 'sims/obs_klms/'
-        rawSpec = np.loadtxt(self.dir+'nlkk.dat')
-        
         self.phi = phi
+        self.conserv = conserv
+                
         if res==None:
-            self.mask = hp.read_map(self.dir+'.none/mask.fits', verbose=False)
+            self.mask = hp.read_map(DIR+'data/aux/mask.fits', verbose=False)
             self.malm = hp.map2alm(self.mask)
             print('MASK')
-            DIR_MASKGAL='CMBL_Maps/.none/HFI_Mask_GalPlane-apo0_2048_R2.00.fits'
-            self.maskGal = hp.read_map(DIR_MASKGAL, field=3, verbose=False)
+
+            self.maskGal = hp.read_map(DIR+'data/aux/maskGal.fits', field=3, 
+                                       verbose=False)
             self.malmGal = hp.map2alm(self.maskGal)
             print('MASKGAL')
             
             self.res = hp.npix2nside(self.mask.size)
-            self.lmax = LMAX(self.res)
+            self.lmax = LMAX(self.res) #!!!
             
-            self.klm = hp.read_alm(self.dir+'.none/dat_klm.fits')
+            self.klm = hp.read_alm(DIR+'data/aux/dat_klm.fits')
             self.kmap = hp.alm2map(self.klm, self.res, verbose=False)
             print('KMAP')
             
-            self.nlkk = rawSpec[:self.lmax+1,1]
-            self.clkk = rawSpec[:self.lmax+1,2] - rawSpec[:self.lmax+1,1]
+            self.nlkk = RAWSPEC[:self.lmax+1,1]
+            self.clkk = RAWSPEC[:self.lmax+1,2] - RAWSPEC[:self.lmax+1,1]
             
             fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
             fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
@@ -68,38 +66,41 @@ class LensingMap(object):
             print('FMAP')
         
         elif res in NSIDES:
+            direc = DIR+'data/maps/n'+STR4(res)
+            
             self.res = res
             self.lmax = LMAX(res)
             
-            self.cb = np.load(self.core+'_cb.npy')
-            self.lon = np.load(self.core+'_lon.npy')
+            self.cb = np.load(direc+'a_cb.npy')
+            self.lon = np.load(direc+'a_lon.npy')
             
             #!!! Downgrading affects noise correlations and thus nlkk and clkk
-            self.nlkk = rawSpec[:self.lmax+1,1]
-            self.clkk = rawSpec[:self.lmax+1,2] - rawSpec[:self.lmax+1,1]
+            self.nlkk = RAWSPEC[:self.lmax+1,1]
+            self.clkk = RAWSPEC[:self.lmax+1,2] - RAWSPEC[:self.lmax+1,1]
             
             fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
             fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
             self.clff = fl**2 * self.clkk
             
             if not phi:
-                self.map = hp.read_map(self.core+'_kmap.fits', verbose=False)
-                self.alm = hp.read_alm(self.core+'_klm.fits')
+                self.map = np.load(direc+'_kmap.npy')
+                self.alm = np.load(direc+'_klm.npy')
             else:
-                self.map = hp.read_map(self.core+'_fmap.fits', verbose=False)
-                self.alm = hp.read_alm(self.core+'_flm.fits')
+                self.map = np.load(direc+'_fmap.npy')
+                self.alm = np.load(direc+'_flm.npy')
             
             if self.conserv:
-                fl = np.concatenate(( np.zeros(40), np.ones(361), np.zeros(1648) ))
+                fl = np.concatenate(( np.zeros(40), np.ones(361), np.zeros(1648) )) #!!!
                 hp.almxfl(self.alm, fl, inplace=True)
                 self.map = hp.alm2map(self.alm, self.res, pol=False, verbose=False)
+            
             self.sim = None
             
-            self.mask = hp.read_map(self.core+'_mask.fits', verbose=False)
-            #self.malm = hp.read_alm(self.core+'_malm.fits')
+            self.mask = np.load(direc+'a_mask.npy')
+            self.malm = np.load(direc+'a_malm.npy')
             
-            self.maskGal = hp.read_map(self.core+'_maskGal.fits',verbose=False)
-            #self.malmGal = hp.read_alm(self.core+'_malmGal.fits')
+            self.maskGal = np.load(direc+'a_maskGal.npy')
+            self.malmGal = np.load(direc+'a_malmGal.npy')
             
         else:
             raise ValueError('Resolution (Nside) must be a power of 2')
@@ -108,7 +109,7 @@ class LensingMap(object):
         '''
         Resets object with new resolution.
         '''
-        self.__init__(int(res))
+        self.__init__(res=int(res))
         
     def _lowRes(self, res, bd=0.9):
         '''
@@ -125,7 +126,9 @@ class LensingMap(object):
         self.flm = hp.almxfl(self.flm, fl)
         self.malm = hp.almxfl(self.malm, fl)
         self.malmGal = hp.almxfl(self.malmGal, fl)
-            
+        
+        print('Half low')
+        
         lowkmap = hp.alm2map(self.klm, res, verbose=False)
         lowfmap = hp.alm2map(self.flm, res, verbose=False)
         lowmask = hp.alm2map(self.malm, res, verbose=False)
@@ -139,6 +142,10 @@ class LensingMap(object):
         self.fmap = lowfmap
         self.mask = lowmask
         self.maskGal = lowmaskGal
+        
+        self.cb, self.lon = hp.pix2ang(res, np.arange(self.kmap.size))
+        
+        print('Full low')
     
     def _write(self, res):
         '''
@@ -146,17 +153,24 @@ class LensingMap(object):
         '''
         if res!=2048: self._lowRes(res)
         
-        hp.write_map(self.core+'_kmap.fits', self.kmap, nest=False)
-        hp.write_alm(self.core+'_klm.fits', self.klm)
+        np.save(DIR+'data/maps/n'+STR4(res)+'_kmap', self.kmap)
+        np.save(DIR+'data/maps/n'+STR4(res)+'_klm', self.klm)
         
-        hp.write_map(self.core+'_fmap.fits', self.fmap, nest=False)
-        hp.write_alm(self.core+'_flm.fits', self.flm)
+        np.save(DIR+'data/maps/n'+STR4(res)+'_fmap', self.fmap)
+        np.save(DIR+'data/maps/n'+STR4(res)+'_flm', self.flm)
         
-        hp.write_map(self.core+'_mask.fits', self.mask, nest=False)
-        hp.write_alm(self.core+'_malm.fits', self.malm)
+        print('Half write')
         
-        hp.write_map(self.core+'_maskGal.fits', self.maskGal, nest=False)
-        hp.write_alm(self.core+'_malmGal.fits', self.malmGal)
+        np.save(DIR+'data/maps/n'+STR4(res)+'a_mask', self.mask)
+        np.save(DIR+'data/maps/n'+STR4(res)+'a_malm', self.malm)
+        
+        np.save(DIR+'data/maps/n'+STR4(res)+'a_maskGal', self.maskGal)
+        np.save(DIR+'data/maps/n'+STR4(res)+'a_malmGal', self.malmGal)
+        
+        np.save(DIR+'data/maps/n'+STR4(res)+'a_cb', self.cb)
+        np.save(DIR+'data/maps/n'+STR4(res)+'a_lon', self.lon)
+
+        print('Full write')
     
     def _writeAll(self):
         '''
@@ -164,8 +178,8 @@ class LensingMap(object):
         '''
         for res in NSIDES[:-1]:
             print(res)
-            self.set_res(NSIDES[-1])
             self._write(res)
+            self.set_res(None)
     
     def plotMap(self, mask=True):
         '''
@@ -184,7 +198,7 @@ class LensingMap(object):
             Map[self.mask==0.] = hp.UNSEEN
             Map = hp.ma(Map)
         
-        cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
+        cmap = ListedColormap(CMB_CMAP)
         cmap.set_under('w')
         cmap.set_bad('gray')
         hp.mollview(Map, title=ttl+' at $N_{side} = 2048$', 
@@ -263,6 +277,11 @@ class LensingMap(object):
             else: title = r'Simulated lensing convergence $\kappa$'
             hp.mollview(Map, coord='G', title=title, cbar=True, 
                         unit=r'dimensionless')
+
+
+
+
+
 
 
 
