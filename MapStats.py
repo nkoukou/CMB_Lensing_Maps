@@ -160,7 +160,7 @@ def xCorrelate(radius):
         
     return pixs
 
-def getDisk(centre, radius, mask=None, edge=False):
+def getDisk(centre, radius, res, mask=None, edge=False):
     '''
     Returns pixels within the disk of given centre and radius on any map, 
     excluding the boundaries. Only unmasked pixels by given mask are returned.
@@ -168,7 +168,7 @@ def getDisk(centre, radius, mask=None, edge=False):
     R = np.radians(radius)
     cb, lon = centre
     VEC = hp.ang2vec(cb, lon, lonlat=False)
-    pixs = hp.query_disc(MAP.res, vec=VEC, radius=R, inclusive=edge)
+    pixs = hp.query_disc(res, vec=VEC, radius=R, inclusive=edge)
     if mask is not None: pixs = pixs[np.where(mask[pixs]==1.)]
     return pixs
 

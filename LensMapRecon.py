@@ -13,13 +13,15 @@ RAWSPEC = np.loadtxt(DIR+'data/aux/nlkk.dat')
 CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
 
 NSIDES = [2**x for x in range(4, 12)]
-NSIMS = 99
+NSIMS = 100
 
-BEAM = 5./60 * np.pi/180 #radians
-FWHM = {};
+NOISY = 40 # (ref. Planck 2015 results XV. Gravitational lensing)
+BEAM = 5./60 * np.pi/180 #radians (ref. as above)
+FWHM = {}; # (ref. as above)
 for nside in NSIDES: FWHM[nside] = BEAM * (2048/nside) #radians
 
-LMAX = lambda res: res
+LMAX = lambda res: res if res==NSIDES[-1] else 2*res
+STR2 = lambda res: str(int(res)).zfill(2)
 STR4 = lambda res: str(int(res)).zfill(4)
 
 ###
@@ -31,14 +33,176 @@ class LensingMap(object):
     """
     def __init__(self, phi, conserv=False, res=2048):
         '''        
-        Reads the lensing map of given resolution from expected directory. Then,
-        all necessary secondary data are also loaded (e.g. mask). If res=None, 
-        the original .fits file is read with resolution 2048. 
+        Reads the lensing map of given resolution. Then, all necessary secondary
+        data are also loaded (e.g. mask).
         '''
         self.phi = phi
         self.conserv = conserv
-                
-        if res==None:
+        self.dir = DIR+'data/maps/n'+STR4(res)
+        
+        if res in NSIDES:            
+            self.res = res
+            self.lmax = LMAX(res)
+            
+            self.cb = np.load(self.dir+'a_cb.npy')
+            self.lon = np.load(self.dir+'a_lon.npy')
+            
+            #!!! Downgrading affects noise correlations and thus nlkk and clkk
+            self.nlkk = RAWSPEC[:self.lmax+1,1]
+            self.clkk = RAWSPEC[:self.lmax+1,2] - RAWSPEC[:self.lmax+1,1]
+            
+            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
+            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+            self.clff = fl**2 * self.clkk
+            
+            if not phi: #!!! too many trailing 0's
+                self.map = np.load(self.dir+'_kmap.npy')
+                self.alm = np.load(self.dir+'_klm.npy')
+            else:
+                self.map = np.load(self.dir+'_fmap.npy')
+                self.alm = np.load(self.dir+'_flm.npy')
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+            if self.conserv:
+                self.noiseFilt = np.concatenate(( np.zeros(NOISY),
+                     np.ones(self.lmax+1 - noisy), 
+                     np.zeros(NSIDES[-1]-self.lmax) ))
+                hp.almxfl(self.alm, self.noiseFilt, inplace=True)
+                self.map = hp.alm2map(self.alm, self.res, pol=False, 
+                                      verbose=False)
+            
+            self.sim = None
+            
+            self.mask = np.load(self.dir+'a_mask.npy')
+            self.malm = np.load(self.dir+'a_malm.npy')
+            
+            self.maskGal = np.load(self.dir+'a_maskGal.npy')
+            self.malmGal = np.load(self.dir+'a_malmGal.npy')
+            
+        else:
+            raise ValueError('Resolution (Nside) must be a power of 2')
+    
+    def set_res(self, res):
+        '''
+        Resets object with new resolution.
+        '''
+        self.__init__(phi=self.phi, conserv=self.conserv, res=int(res))
+    
+    def plotMap(self, mask=True):
+        '''
+        Plots map of phi or kappa and includes mask if mask=True.
+        '''
+        Map = np.copy(self.map)
+        if self.phi:
+            ttl = r'Lensing potential $\phi$'
+            fmt = '%07.3e'
+            unt = r'$\phi$'
+        else:
+            ttl = r'Lensing convergence $\kappa$'
+            fmt = '%.3f'
+            unt = r'$\kappa$'
+        if mask:
+            Map[self.mask==0.] = hp.UNSEEN
+            Map = hp.ma(Map)
+        
+        cmap = ListedColormap(CMB_CMAP)
+        cmap.set_under('w')
+        cmap.set_bad('gray')
+        hp.mollview(Map, title=ttl+' at $N_{side} = 2048$', 
+                    format=fmt, cmap=cmap, cbar=True, unit=unt)
+    
+    def plotSpec(self):
+        '''
+        Plots figure 6 of Planck 2015 results XV.
+        '''
+        start = 8
+        ell = np.arange(self.lmax+1)
+        y = 2./np.pi * 1e7 * self.clkk
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.semilogx(ell[start:], y[start:])
+        ax.set_xlabel(r'$L$')
+        ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
+    
+    def plotNoisySpec(self, sims):
+        '''
+        Compares power spectrum of given simulations with data.
+        '''
+        if self.res not in [256, 2048]:
+            raise ValueError('Only res=256 or 2048 considered')
+        print('START')
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        
+        clm = hp.anafast(self.map, pol=False)
+        cl = [clm]
+        ax.plot(clm, 'k.', label='Data')
+        for s in sims:
+            print(s)
+            self.loadSim(s)
+            print('CL')
+            cls = hp.anafast(self.sim, pol=False)
+            cl.append(cls)
+            ax.plot(cls, '.', label='Sim '+str(s))
+        ax.set_title('Kappa Power Spectrum')
+        ax.set_xlabel(r'$L$')
+        ax.set_ylabel(r'$C_L$')
+        ax.legend(loc='upper right', prop={'size':14})
+        return cl
+    
+    def loadSim(self, n, plot=False):
+        '''
+        Loads the n-th simulation.
+        
+        !!!how do sim_lm give rise to 0 values in the area covered by mask??
+        '''
+        if self.res not in [256, 2048]:
+            raise ValueError('Only res=256 or 2048 considered')
+        
+        if n==100:
+            self.slm = self.alm
+            self.sim = self.map
+            return
+        
+        if self.phi:
+            self.slm = np.load(self.dir+'_s'+STR2(n)+'_flm.npy')
+            self.sim = np.load(self.dir+'_s'+STR2(n)+'_fmap.npy')
+        else:
+            self.slm = np.load(self.dir+'_s'+STR2(n)+'_klm.npy')
+            self.sim = np.load(self.dir+'_s'+STR2(n)+'_kmap.npy')
+        
+        if self.conserv:
+            hp.almxfl(self.slm, self.noiseFilt, inplace=True)
+            self.sim = hp.alm2map(self.slm, self.res, pol=False, verbose=False)
+            
+        if plot:
+            Map = np.copy(self.sim)
+            Map[self.mask==0.] = hp.UNSEEN
+            Map = hp.ma(Map)
+            if self.phi:
+                ttl = r'Simulated lensing potential $\phi$'
+                fmt = '%07.3e'
+                unt = r'$\phi$'
+            else:
+                ttl = r'Simulated lensing convergence $\kappa$'
+                fmt = '%.3f'
+                unt = r'$\kappa$'
+            cmap = ListedColormap(CMB_CMAP)
+            cmap.set_under('w')
+            cmap.set_bad('gray')
+            hp.mollview(Map, title=ttl+' at $N_{side} = 2048$', 
+                        format=fmt, cmap=cmap, cbar=True, unit=unt)
+
+# Helper class
+class BasicLensingMap(object):
+    '''
+    Writes relevant maps and alms so that they can be loaded from LensingMap
+    class.
+    '''
+    def __init__(conserv):
+        self.conserv = conserv
+        
+        if res is None:
             self.mask = hp.read_map(DIR+'data/aux/mask.fits', verbose=False)
             self.malm = hp.map2alm(self.mask)
             print('MASK')
@@ -49,7 +213,7 @@ class LensingMap(object):
             print('MASKGAL')
             
             self.res = hp.npix2nside(self.mask.size)
-            self.lmax = LMAX(self.res) #!!!
+            self.lmax = NSIDES[-1]
             
             self.klm = hp.read_alm(DIR+'data/aux/dat_klm.fits')
             self.kmap = hp.alm2map(self.klm, self.res, verbose=False)
@@ -64,15 +228,13 @@ class LensingMap(object):
             self.fmap = hp.alm2map(self.flm, self.res, verbose=False)
             self.clff = fl**2 * self.clkk
             print('FMAP')
-        
-        elif res in NSIDES:
-            direc = DIR+'data/maps/n'+STR4(res)
             
+        elif res==2048:
             self.res = res
             self.lmax = LMAX(res)
             
-            self.cb = np.load(direc+'a_cb.npy')
-            self.lon = np.load(direc+'a_lon.npy')
+            self.cb = np.load(self.dir+'a_cb.npy')
+            self.lon = np.load(self.dir+'a_lon.npy')
             
             #!!! Downgrading affects noise correlations and thus nlkk and clkk
             self.nlkk = RAWSPEC[:self.lmax+1,1]
@@ -82,34 +244,37 @@ class LensingMap(object):
             fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
             self.clff = fl**2 * self.clkk
             
-            if not phi:
-                self.map = np.load(direc+'_kmap.npy')
-                self.alm = np.load(direc+'_klm.npy')
-            else:
-                self.map = np.load(direc+'_fmap.npy')
-                self.alm = np.load(direc+'_flm.npy')
+            self.kmap = np.load(self.dir+'_kmap.npy')
+            self.klm = np.load(self.dir+'_klm.npy')
             
+            self.fmap = np.load(self.dir+'_fmap.npy')
+            self.flm = np.load(self.dir+'_flm.npy')
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
             if self.conserv:
-                fl = np.concatenate(( np.zeros(40), np.ones(361), np.zeros(1648) )) #!!!
-                hp.almxfl(self.alm, fl, inplace=True)
-                self.map = hp.alm2map(self.alm, self.res, pol=False, verbose=False)
+                self.noiseFilt = np.concatenate(( np.zeros(NOISY),
+                     np.ones(self.lmax+1 - noisy), 
+                     np.zeros(NSIDES[-1]-self.lmax) ))
+                hp.almxfl(self.alm, self.noiseFilt, inplace=True)
+                self.map = hp.alm2map(self.alm, self.res, pol=False, 
+                                      verbose=False)
             
             self.sim = None
             
-            self.mask = np.load(direc+'a_mask.npy')
-            self.malm = np.load(direc+'a_malm.npy')
+            self.mask = np.load(self.dir+'a_mask.npy')
+            self.malm = np.load(self.dir+'a_malm.npy')
             
-            self.maskGal = np.load(direc+'a_maskGal.npy')
-            self.malmGal = np.load(direc+'a_malmGal.npy')
+            self.maskGal = np.load(self.dir+'a_maskGal.npy')
+            self.malmGal = np.load(self.dir+'a_malmGal.npy')
             
         else:
             raise ValueError('Resolution (Nside) must be a power of 2')
+        self.dir = DIR+'data/maps/n'+STR4(res)
     
     def set_res(self, res):
         '''
         Resets object with new resolution.
         '''
-        self.__init__(res=int(res))
+        self.__init__(phi=self.phi, conserv=self.conserv, res=res)
         
     def _lowRes(self, res, bd=0.9):
         '''
@@ -151,7 +316,7 @@ class LensingMap(object):
         '''
         Produces output data files of map and mask data for given resolution.
         '''
-        if res!=2048: self._lowRes(res)
+        if res!=NSIDES[-1]: self._lowRes(res)
         
         np.save(DIR+'data/maps/n'+STR4(res)+'_kmap', self.kmap)
         np.save(DIR+'data/maps/n'+STR4(res)+'_klm', self.klm)
@@ -179,107 +344,62 @@ class LensingMap(object):
         for res in NSIDES[:-1]:
             print(res)
             self._write(res)
-            self.set_res(None)
-    
-    def plotMap(self, mask=True):
-        '''
-        Plots map of phi or kappa and includes mask if mask=True.
-        '''
-        Map = np.copy(self.map)
-        if self.phi:
-            ttl = r'Lensing potential $\phi$'
-            fmt = '%07.3e'
-            unt = r'$\phi$'
-        else:
-            ttl = r'Lensing convergence $\kappa$'
-            fmt = '%.3f'
-            unt = r'$\kappa$'
-        if mask:
-            Map[self.mask==0.] = hp.UNSEEN
-            Map = hp.ma(Map)
-        
-        cmap = ListedColormap(CMB_CMAP)
-        cmap.set_under('w')
-        cmap.set_bad('gray')
-        hp.mollview(Map, title=ttl+' at $N_{side} = 2048$', 
-                    format=fmt, cmap=cmap, cbar=True, unit=unt)
-    
-    def plotSpec(self):
-        '''
-        Plots figure 6 of Planck 2015 results XV.
-        '''
-        start = 8
-        ell = np.arange(self.lmax+1)
-        y = 2./np.pi * 1e7 * self.clkk
-        
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.semilogx(ell[start:], y[start:])
-        ax.set_xlabel(r'$L$')  
-        ax.set_ylabel(r'$\frac{[L(L+1)]^2}{2\pi}C_L^{\phi\phi}\ [\times 10^7]$')
-    
-    def plotNoisySpec(self, sims):
-        '''
-        Compares power spectrum of given simulations with data.
-        '''
-        print('START')
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        
-        clm = hp.anafast(self.map, pol=False)
-        cl = [clm]
-        ax.plot(clm, 'k.', label='Data')
-        for s in sims:
-            print(s)
-            self.loadSim(s)
-            print('CL')
-            cls = hp.anafast(self.sim, pol=False)
-            cl.append(cls)
-            ax.plot(cls, '.', label='Sim '+str(s))
-        ax.set_title('Kappa Power Spectrum')
-        ax.legend(loc='upper right', prop={'size':14})
-        return cl
-    
-    def loadSim(self, n, plot=False):
-        '''
-        Loads the n-th simulation in directory self.dirSim.
-        
-        !!!only in res=2048, how do sim_lm give rise to 0 values in the area 
-        covered by mask??
-        '''
-        if self.res!=2048: raise ValueError('Only res=2048 considered')
-        
-        if n==99:
-            self.slm = self.alm
-            self.sim = self.map
-            return
-        
-        slm = hp.read_alm(self.dirSim+'sim_'+STR4(n)+'_klm.fits')
-        if self.phi:
-            fl = (2./(ell*(ell+1)) for ell in range(1, self.lmax+1))
-            fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
-            self.slm = hp.almxfl(slm, fl)
-            self.sim = np.load(self.dirSim+'sim_'+STR4(n)+'_fmap.npy')
-        else:
-            self.slm = slm
-            self.sim = np.load(self.dirSim+'sim_'+STR4(n)+'_kmap.npy')
-        
-        if self.conserv:
-            fl = np.concatenate(( np.zeros(40), np.ones(361), np.zeros(1648) ))
-            hp.almxfl(self.slm, fl, inplace=True)
-            self.sim = hp.alm2map(self.slm, self.res, pol=False, verbose=False)
-            
-        if plot:
-            Map = np.copy(self.sim)
-            Map[self.mask==0.] = hp.UNSEEN
-            Map = hp.ma(Map)
-            if self.phi: title = r'Simulated lensing potential $\phi$'
-            else: title = r'Simulated lensing convergence $\kappa$'
-            hp.mollview(Map, coord='G', title=title, cbar=True, 
-                        unit=r'dimensionless')
+            self.set_res(NSIDES[-1])
 
+    def _writeSim(self, n):
+        '''
+        Produces output data files of given simulation at resolutions 256, 2048.
+        !!! Only res = 256, 2048
+        '''
+        if self.res!=NSIDES[-1]: self.set_res(NSIDES[-1])
+        
+        sklm = hp.read_alm(DIR+'data/sims/obs_klms/sim_'+STR4(n)+'_klm.fits')
+        fl = (2./(ell*(ell+1)) for ell in range(1, NSIDES[-1]+1))
+        fl = np.concatenate( (np.ones(1), np.fromiter(fl, np.float64)) )
+        sflm = hp.almxfl(sklm, fl)
+        
+        print('HALF 2048')
+        
+        skmap = hp.alm2map(sklm, 2048, verbose=False)
+        sfmap = hp.alm2map(sflm, 2048, verbose=False)
+        
+        np.save(DIR+'data/maps/n2048_s'+str(n).zfill(2)+'_klm', sklm)
+        np.save(DIR+'data/maps/n2048_s'+str(n).zfill(2)+'_flm', sflm)
+        np.save(DIR+'data/maps/n2048_s'+str(n).zfill(2)+'_kmap', skmap)
+        np.save(DIR+'data/maps/n2048_s'+str(n).zfill(2)+'_fmap', sfmap)
+        
+        print('DONE 2048')
+        
+        res = 256
+        lmax = LMAX(res)
+        beam0 = hp.gauss_beam(FWHM[self.res], lmax)
+        pixw0 = hp.pixwin(self.res)[:lmax+1]
+        beam = hp.gauss_beam(FWHM[res], lmax)
+        pixw = hp.pixwin(res)[:lmax+1]
+        fl = (beam*pixw)/(beam0*pixw0)
+        
+        sklm = hp.almxfl(sklm, fl)
+        sflm = hp.almxfl(sflm, fl)
+        
+        print('HALF 256')
+        
+        skmap = hp.alm2map(sklm, res, verbose=False)
+        sfmap = hp.alm2map(sflm, res, verbose=False)
+        
+        np.save(DIR+'data/maps/n0256_s'+str(n).zfill(2)+'_klm', sklm)
+        np.save(DIR+'data/maps/n0256_s'+str(n).zfill(2)+'_flm', sflm)
+        np.save(DIR+'data/maps/n0256_s'+str(n).zfill(2)+'_kmap', skmap)
+        np.save(DIR+'data/maps/n0256_s'+str(n).zfill(2)+'_fmap', sfmap)
+        
+        print('DONE 256')
 
-
+    def _writeAllSim(self):
+        '''
+        Produces output data files of all simulations at resolutions 256, 2048.
+        '''
+        for n in range(NSIMS):
+            print('SIM '+str(n))
+            self._write(n)
 
 
 
