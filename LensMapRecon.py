@@ -199,7 +199,7 @@ class BasicLensingMap(object):
     Writes relevant maps and alms so that they can be loaded from LensingMap
     class.
     '''
-    def __init__(conserv):
+    def __init__(self, conserv, res):
         self.conserv = conserv
         
         if res is None:
@@ -213,6 +213,7 @@ class BasicLensingMap(object):
             print('MASKGAL')
             
             self.res = hp.npix2nside(self.mask.size)
+            self.dir = DIR+'data/maps/n'+STR4(res)
             self.lmax = NSIDES[-1]
             
             self.klm = hp.read_alm(DIR+'data/aux/dat_klm.fits')
@@ -230,6 +231,7 @@ class BasicLensingMap(object):
             print('FMAP')
             
         elif res==2048:
+            self.dir = DIR+'data/maps/n'+STR4(res)
             self.res = res
             self.lmax = LMAX(res)
             
@@ -268,7 +270,6 @@ class BasicLensingMap(object):
             
         else:
             raise ValueError('Resolution (Nside) must be a power of 2')
-        self.dir = DIR+'data/maps/n'+STR4(res)
     
     def set_res(self, res):
         '''
@@ -287,10 +288,10 @@ class BasicLensingMap(object):
         pixw = hp.pixwin(res)[:lmax+1]
         fl = (beam*pixw)/(beam0*pixw0)
         
-        self.klm = hp.almxfl(self.klm, fl)
-        self.flm = hp.almxfl(self.flm, fl)
-        self.malm = hp.almxfl(self.malm, fl)
-        self.malmGal = hp.almxfl(self.malmGal, fl)
+        hp.almxfl(self.klm, fl, inplace=True)
+        hp.almxfl(self.flm, fl, inplace=True)
+        hp.almxfl(self.malm, fl, inplace=True)
+        hp.almxfl(self.malmGal, fl, inplace=True)
         
         print('Half low')
         
@@ -378,8 +379,8 @@ class BasicLensingMap(object):
         pixw = hp.pixwin(res)[:lmax+1]
         fl = (beam*pixw)/(beam0*pixw0)
         
-        sklm = hp.almxfl(sklm, fl)
-        sflm = hp.almxfl(sflm, fl)
+        hp.almxfl(sklm, fl, inplace=True)
+        hp.almxfl(sflm, fl, inplace=True)
         
         print('HALF 256')
         
@@ -399,7 +400,7 @@ class BasicLensingMap(object):
         '''
         for n in range(NSIMS):
             print('SIM '+str(n))
-            self._write(n)
+            self._writeSim(n)
 
 
 
