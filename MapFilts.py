@@ -1,12 +1,12 @@
 '''
 Includes the filters used to analyse map statistics.
 '''
+import os.path
 import numpy as np
 import astropy as ap
 import healpy as hp
 import matplotlib.pylab as plt
 from matplotlib.colors import ListedColormap
-import os.path
 
 # Global constants and functions
 DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
@@ -22,18 +22,18 @@ M1FAC = 2.00
 M2BDS = 0.10
 M2BDG = 0.95
 
-STR4 = lambda res: str(int(res)).zfill(4)
 STR2 = lambda res: str(int(res)).zfill(2)
+STR4 = lambda res: str(int(res)).zfill(4)
 
 ###
 
 # Map filtering and plotting functions
-def filterMap(MAP, scale, a, mask=True, RES=None):
+def filterMap(MAP, scale, a, mask=True):
     '''
     Filters map at given scale in arcmins. If mask=True, returns filtered mask 
     as well. The map is current MAP loaded simulation.
     '''
-    R = np.radians(60*scale)
+    R = np.radians(scale/60)
     
     Map = MAP.sim
     mlm = MAP.slm
@@ -44,16 +44,17 @@ def filterMap(MAP, scale, a, mask=True, RES=None):
         gauss = np.sin(MAP.cb)*np.exp( - MAP.cb*MAP.cb /(2*sigma*sigma) )
         A = 1./( 2*np.pi*np.trapz(gauss, MAP.cb) )
         fl = A*np.exp(-0.5 * ell * (ell + 1) * sigma ** 2)
+        fmask = MAP.dir+'a_maskFiltG'+STR4(scale)+'.npy'
     else:        
         W = mexHat(R, a, MAP.cb)
         wlm = hp.map2alm(W, lmax=MAP.lmax, mmax=0)
         ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
         fl = ellFac * np.conj(wlm)
+        fmask = MAP.dir+'a_maskFiltS'+STR4(scale)+'.npy'
     convAlm = hp.almxfl(alm=mlm, fl=fl)
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
-        fmask = MAP.dir+'a_maskFilt'+STR4(scale)+'.npy'
         if os.path.isfile(fmask):
             newmask = np.load(fmask)
         else:
@@ -62,7 +63,7 @@ def filterMap(MAP, scale, a, mask=True, RES=None):
         newmap = (newmap, newmask)
     return newmap
 
-def plotMap(filtmap, filtmask, scale, a):
+def plotMap(filtmap, filtmask, phi, scale, a):
     '''
     Plots given map with given mask. Both must have already been filtered at 
     given scale and a.
@@ -76,14 +77,16 @@ def plotMap(filtmap, filtmask, scale, a):
     ttl = (r'Filtered map at $(R, \alpha) = $' 
            r'({0}, {1}) and $N_{{side}} = 'r'{2}'r'$'.format(scale, a, res))
     fmt = '%07.3e'
-    unt = r'$\kappa$'
+    if phi is None: unt = r'$T (K)$'
+    elif phi: unt = r'$\phi$'
+    else: unt = r'$\kappa$'
     cmap = ListedColormap(CMB_CMAP)
     cmap.set_under('w')
     cmap.set_bad('gray')
     hp.mollview(Map, title=ttl, format=fmt, cmap=cmap, cbar=True, unit=unt)
 
 # SMHWs
-def A(R, a):
+def Amp(R, a):
     '''
     Normalisation amplitude so that mexHat squared integrates to unity.
     '''
@@ -106,22 +109,23 @@ def mexHat(R, a, cb):
     J = (1. + yy/4.)*(1. + yy/4.)
     
     # Wavelet function
-    W = A(R,a) * J * ( a - 1./RR * yy ) * np.exp( -1./(a*RR) * yy )
+    W = Amp(R,a) * J * ( a - 1./RR * yy ) * np.exp( -1./(a*RR) * yy )
     
     return W
 
 # Helper functions for masking
-def _filterMask(MAP, scale, a, RES):
+def _filterMask(MAP, scale, a):
     '''
     Filters mask at given scale according to Planck 2013 XXIII (section 4.5).
     Similar to Zhang, Huterer 2010 in the convolution step.
     
-    Degrading is not performed because it has little effect on efficiency. !!!
+    Degrading is not performed because it has little effect on efficiency and 
+    results. !!!
     '''
     R = np.radians(scale/60)
     
     # Isolate Galactic plane for res=2048
-    res = RES; bd =0.9 # Magic constants (bd referes to last step - downgrade)
+    res = 2048; bd =0.9 # Magic constants (bd referes to last step - downgrade)
     aux = np.load(DIR+'data/maps/n'+STR4(res)+'a_maskGal.npy')
     
     # Find and extend boundaries by a factor M1FAC of the aperture
@@ -197,38 +201,51 @@ def _filterAllMasks(lmap):
     '''
     scales = np.array([10, 25, 50, 100, 750, 1000])
     scales = np.concatenate((scales, np.linspace(30, 900, 30)))
-    for RES in [1024, 2048]:
-        for scale in scales:
-            for a in [0,1]:
-                print('RES, SCALE, A : ', RES, scale, a)
-                nmp, nmk= filterMap(lmap, scale, a, mask=True, RES=RES)
+    for scale in scales:
+        for a in [0,1]:
+            print('SCALE, A : ', scale, a)
+            nmp, nmk= filterMap(lmap, scale, a, mask=True)
     
 
 # Plot function for wavelet profiles
-def _plotWprof():
+def profileFilts():
     '''
-    !!!
+    Plots the profiles of SMHW and Gaussian filters.
     '''
     thetas = np.linspace(0,np.pi/2, 10000, endpoint=False)
     
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    
-    W = mexHat(np.radians(10), 2, thetas)
-    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(102))
-    W = mexHat(np.radians(10), 6, thetas)
-    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(106))
-    W = mexHat(np.radians(15), 2, thetas)
-    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(152))
-    W = mexHat(np.radians(15), 6, thetas)
-    ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(156))
-    
+    for r in [1, 5, 10, 15, 20]:
+        R = np.radians(r)
+        W = mexHat(R, 2, thetas)/Amp(R,2)
+        ax.plot(thetas*180/np.pi, W, label=r'$R$ = {0}'.format(r))
     ax.set_xlabel(r'$\theta$ (deg)', fontsize=14)
-    ax.set_ylabel(r'$W(\theta; R, \alpha)$', fontsize=14)
-    ax.set_xlim([0,90])
-    ax.set_ylim([-0.2,1])
+    ax.set_ylabel(r'$W(\theta; R, \alpha=2)$', fontsize=14)
     ax.legend(loc='upper right', prop={'size':14})
 
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    R = np.radians(5)
+    for a in [1, 2, 4, 7, 10]:
+        W = mexHat(R, a, thetas)/(a*Amp(R,a))
+        ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(a))
+    
+    ax.set_xlabel(r'$\theta$ (deg)', fontsize=14)
+    ax.set_ylabel(r'$W(\theta; R=5^\circ, \alpha)$', fontsize=14)
+    ax.legend(loc='upper right', prop={'size':14})
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for r in [1, 5, 10, 15, 20]:
+        R = np.radians(r)
+        sigma = R/( 2.*np.sqrt(2.*np.log(2.)) )
+        G = np.exp( - thetas*thetas /(2*sigma*sigma) )
+        ax.plot(thetas*180/np.pi, G, label=r'$R$ = {0}'.format(r))
+    
+    ax.set_xlabel(r'$\theta$ (deg)', fontsize=14)
+    ax.set_ylabel(r'$G(\theta; R)$', fontsize=14)
+    ax.legend(loc='upper right', prop={'size':14})
 
 
 
