@@ -157,7 +157,6 @@ class LensingMap(object):
         '''
         if self.res not in [256, 2048]:
             raise ValueError('Only res=256 or 2048 considered')
-        print('START')
         fig = plt.figure()
         ax = fig.add_subplot(111)
         
@@ -165,13 +164,10 @@ class LensingMap(object):
         cl = [clm]
         ax.plot(clm, 'k.', label='Data')
         for s in sims:
-            print(s)
             self.loadSim(s)
-            print('CL')
             cls = hp.anafast(self.sim, pol=False)
             cl.append(cls)
             ax.plot(cls, '.', label='Sim '+str(s))
-        ax.set_title('Kappa Power Spectrum')
         ax.set_xlabel(r'$L$')
         ax.set_ylabel(r'$C_L$')
         ax.legend(loc='upper right', prop={'size':14})

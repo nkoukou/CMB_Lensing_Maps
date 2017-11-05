@@ -59,7 +59,7 @@ def filterMap(MAP, scale, a, mask=True):
             newmask = np.load(fmask)
         else:
             print('MASK WAS NOT FOUND')
-            newmask = _filterMask(MAP, scale, a, RES)
+            newmask = _filterMask(MAP, scale, a)
         newmap = (newmap, newmask)
     return newmap
 

@@ -8,6 +8,7 @@ Lensing Maps.
    half pixels covered? should not do that assuming that highest signal is 
    correct metric after filtering)
  - class of stats inheriting map?
+#!!!!!!!! Check indices 0 and -1 for data vs simulations, divide by 100 or 101 for pvalue??, why pvalue in pvalueHist is so high???, xCorr
 '''
 import os.path
 import time
@@ -35,8 +36,9 @@ DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
 NSIDES = [2**x for x in range(4, 12)]
 NSIMS = 100
 
-FRTEST = np.array([10, 25, 50, 100, 750, 1000])
-FR = np.linspace(30, 900, 30)
+FRTEST = np.array([25, 50, 100, 1000]) #10 gives problems with mask
+FRN = np.linspace(30, 900, 30)
+FR = np.concatenate((FRTEST, FRN))
 FA = np.linspace(0,10,11)
 
 BINS = 10
@@ -48,6 +50,7 @@ STR4 = lambda res: str(int(res)).zfill(4)
 FNAME = lambda f, R, a, sim, mode: DIRRES+'signif_'+f+'_R'+STR4(R)+'_a'+\
                                    STR2(a)+'_'+STR2(sim)+mode+'.npy'
 CSTR = lambda conserv: 'C' if conserv else ''
+FK = lambda phi: 'f' if phi else 'k'
 ###
 
 # Tests
@@ -154,69 +157,202 @@ def csaverages(conserv=False, plot=True, res=None):
         
     return anuli
 
-def xCorrelate(radius, conserv=False, plot=True):
+def xCorrelate(radius, conserv=False, plot=True, res=None):
     '''
     Correlates temperature Cold Spot with lensing map.
     '''
-    tmap = tcs.TempMap(MAP.res)
-    tcoord = lonlat2colatlon(tcs.COORDCS)
-    tpixs = getDisk(tcoord, radius)
+    MAP.set_res(res)
+    MAP.set_conserv(conserv)
     
-    pixs = [tpixs] #Rotate whole map so that all pixs have equal size and all centres are tcs.COORCS
-    lenslons = np.arange(tcs.COORDCS[0], tcs.COORDCS[0]+360, 2*radius)%360
-    lenslats = np.arange(tcs.COORDCS[1], tcs.COORDCS[1]+180, 2*radius)%180
-    for lon in lenslons:
-        for lat in lenslats:
-            lcoord = lonlat2colatlon((lon, lat))
-            lpixs = getDisk(lcoord, radius)
-            print(lpixs.size)
-            pixs.append(lpixs)
-        
-    return pixs
-
-def testTable(conserv):
-    if conserv: strng = 'C'
-    else: strng = 'A'
-    area, skew, vark, varp = np.zeros(100), np.zeros(100), np.zeros(100), np.zeros(100)
-    MAP = lmr.LensingMap(phi=False, conserv=conserv, res=2048)
-    for s in range(lmr.NSIMS+1):
-        print('SIM:', s, strng)
-        MAP.loadSim(s)
-        newmap, newmask = filterMap(MAP, scale=10/60, a=2, is_sim=True)
-        sample = newmap[newmask==1.]
-        
-        N = sample.size
-        mean = sample.mean()
-        var  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
-        skew[s] = 1./(N*var**3) * ((sample-mean)**3).sum()
-        lbc = plotFlatExtrema(0, np.array([10]), np.array([2]))
-        area[s] = findArea(*lbc)
-        np.save('CMBL_Maps/test/TESTskew'+strng, skew)
-        np.save('CMBL_Maps/test/TESTarea'+strng, area)
-        
-        
-        newmap, newmask = filterMap(MAP, scale=1000/60, a=2, is_sim=True)
-        sample = newmap[newmask==1.]
-        N = sample.size
-        mean = sample.mean()
-        vark[s]  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
-        np.save('CMBL_Maps/test/TESTvark'+strng, vark)
+    cstr = CSTR(conserv)
+    datadir = DIR+'results/n'+STR4(MAP.res)+'_xcorr'+cstr+'.npy'
+    if os.path.isfile(datadir):
+        xcorr = np.load(datadir)
+    else:
+        tmap = tcs.TempMap(MAP.res)
+        tcoord = lonlat2colatlon(tcs.COORDCS)
+        tpixs = getDisk(tcoord, radius)
     
-    print('phi')
-    MAP = lmr.LensingMap(phi=True, conserv=conserv, res=2048)
-    for s in range(lmr.NSIMS+1):
-        print('SIM:', s, strng)
-        MAP.loadSim(s)
-        newmap, newmask = filterMap(MAP, scale=1000/60, a=2, is_sim=True)
-        sample = newmap[newmask==1.]
-        N = sample.size
-        mean = sample.mean()
-        varp[s]  = np.sqrt( 1./N * ((sample-mean)**2).sum() )
-        np.save('CMBL_Maps/test/TESTvarp'+strng, varp)
+        pixs = [tpixs] #Rotate whole map so that all pixs have equal size and all centres are tcs.COORCS
+        lenslons = np.arange(tcs.COORDCS[0], tcs.COORDCS[0]+360, 2*radius)%360
+        lenslats = np.arange(tcs.COORDCS[1], tcs.COORDCS[1]+180, 2*radius)%180
+        for lon in lenslons:
+            for lat in lenslats:
+                lcoord = lonlat2colatlon((lon, lat))
+                lpixs = getDisk(lcoord, radius)
+                print(lpixs.size)
+                pixs.append(lpixs)
+                
+        np.save(datadir, xcorr)
+    
+    if plot:
+        pass
+    
+    return xcorr
 
-def _testTable():
-    testTable(True)
-    testTable(False)
+def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True, 
+             res=None):
+    '''
+    !!!
+    Returns most extreme values in terms of signal to noise for data and 
+    simulations. Parameters are:
+    - scales: container - includes the scales of filters to be considered
+    - alphas: container - includes the alphas of filters to be considered
+    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
+                                used
+    - plot: bool - if True, plots histogram
+    '''
+    MAP.set_phi(phi)
+    MAP.set_res(res)
+    MAP.set_conserv(conserv)
+    
+    scales = np.array(scales)
+    alphas = np.array(alphas)
+    
+    cstr = CSTR(conserv)
+    fk = FK(phi)
+    datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_univs'+cstr+'.npy'
+    if os.path.isfile(datadir):
+        univs = np.load(datadir)
+    else:
+        sims = lmr.NSIMS+1
+        univs = np.zeros((2, FR.size, FA.size, sims))
+        moments = np.zeros((len(MOMENTS),FR.size, FA.size, sims))
+        
+        for n in range(sims):
+            MAP.loadSim(n)
+            for s in range(FR.size):
+                for a in range(FA.size):
+                    print('R, a = ', FR[s], FA[a], '||', n)
+                    nmp, nmk = filterMap(MAP, FR[s], FA[a])
+                    univs[0,s,a,n] = nmp[nmk==1].min()
+                    univs[1,s,a,n] = nmp[nmk==1].max()
+                    moments[:,s,a,n] = calcStats(nmp, nmk, None)
+        
+        np.save(datadir, univs)
+        for i in range(len(MOMENTS)):
+            datadir= DIR+'results/n'+STR4(MAP.res)+fk+'_'+MOMENTS[i]+cstr+'.npy'
+            np.save(datadir, moments[i])
+    
+    fr = np.array(np.where(np.in1d(FR, scales))[0])
+    fa = np.array(np.where(np.in1d(FA, alphas))[0])
+    
+    if metric=='abssig':
+        univs = univs[:,fr,:,:][:,:,fa,:]
+        sims = abs(univs).max((0,1,2))
+        pvalue = sims[sims>sims[-1]].size/sims.size
+    else:
+        raise Exception('Not yet implemented')
+    
+    
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.hist(sims[:-1], bins=BINS, normed=False, histtype='step', lw=1.5)
+        ax.axvline(x=sims[-1], color='r', ls='--', label='p = {0:.2f}'.format(
+                   pvalue))
+        ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+        ax.legend(loc='upper right', prop={'size':14})
+    
+    return pvalue, sims
+
+def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True, 
+               res=None):
+    '''
+    '''
+    plts = plta = False
+    if len(scales) > 1:
+        scales = np.array(scales); plts = True
+    if len(alphas) > 1:
+        alphas = np.array(alphas); plta = True
+    if plts==plta==False:
+        raise ValueError('Neither scales nor alphas are arrays')
+    
+    cstr = CSTR(conserv)
+    fk = FK(phi)
+    datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_pvalues_'+metric+cstr+'.npy'
+    if os.path.isfile(datadir):
+        pvalues = np.load(datadir)
+    else:
+        pvalues = np.zeros((FR.size, FA.size))
+        for s in range(FR.size):
+            for a in range(FA.size):
+                pvalues[s,a], sims = histSims([FR[s]], [FA[a]], metric, 
+                                 phi=False, conserv=False, plot=False, res=None)
+        np.save(datadir, pvalues)
+    
+    if plot:
+        fr = np.array(np.where(np.in1d(FR, scales))[0])
+        fa = np.array(np.where(np.in1d(FA, alphas))[0])
+        yaxis = pvalues[fr,:][:,fa]
+        if plts!=plta:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            if plts:
+                xaxis = scales; p = alphas[0]
+                xlabel = r'$R (^\prime)$'
+            if plta:
+                xaxis = alphas; p = scales[0]
+                xlabel = r'$\alpha$'
+            ax.plot(xaxis, np.squeeze(yaxis), 'bx:')
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(r'$p$-value')
+        
+        if plts and plta:
+            pass
+
+def histPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True, 
+                res=None):
+    '''
+    !!!
+    Plots histogram of p-values from histSims() for all simulations and data.
+    Parameters are:
+    - scales: container - includes the scales of filters to be considered
+    - alphas: container - includes the alphas of filters to be considered
+    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
+                                used
+    '''
+    scales, alphas = np.array(scales), np.array(alphas)
+    pvalues = np.zeros((scales.size, alphas.size, lmr.NSIMS+1))
+    
+    cstr = CSTR(conserv)
+    fk = FK(phi)
+    datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_univs'+cstr+'.npy'
+    sims = np.load(datadir)
+    fr = np.array(np.where(np.in1d(FR, scales))[0])
+    fa = np.array(np.where(np.in1d(FA, alphas))[0])
+    sims = sims[:,fr,:,:][:,:,fa,:]
+    
+    if metric=='abssig':
+        sims = abs(sims).max(0)
+        for s in range(scales.size):
+            for a in range(alphas.size):
+                univ = sims[s,a,:]
+                for sim in range(lmr.NSIMS+1):
+                    pvalues[s,a,sim] = univ[univ>univ[sim]].size/univ.size
+    else:
+        raise Exception('Not yet implemented')
+    
+    filters = []
+    pvmins = pvalues.min((0,1))
+    for i in range(pvmins.size):
+        idxs = np.where(pvalues[:,:,i]==pvmins[i])
+        scale = scales[np.array(idxs[0])]
+        alpha = alphas[np.array(idxs[1])]
+        filters.append([scale, alpha])
+    
+    sims, data = pvmins[:-1], pvmins[-1]
+    pv = pvmins[pvmins<=pvmins[-1]].size/pvmins.size
+    
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.hist(sims, bins=BINS, normed=False, histtype='step', lw=1.5)
+        ax.axvline(x=data, color='r', ls='--', label='p = {0:.2f}'.format(pv))
+        ax.set_title(r'Most extreme $p$-values')
+        ax.legend(loc='upper right', prop={'size':14})
+    
+    return pvmins, filters            
 
 # Basic pixel selection functions
 def lonlat2colatlon(coord):
@@ -295,145 +431,6 @@ def calcStats(Map, mask, pixs):
     return np.array([mean, var, skew, kur])
 
 # Lensing era stats
-def selectFilts(sim, scales, alphas, mode, debug=False):
-    '''
-    Returns given filters for given simulation. Parameters are:
-    - sim: integer - simulation number to be considered
-    - phi: bool - if True, uses phi map instead of kappa map
-    - scales: container (in degrees) - includes the scales of filters to be 
-                                       considered
-    - alphas: container - includes the alphas of filters to be considered
-    - mode: 's' or 'p' - returns significance levels or pixel indices 
-                         respectively
-    '''
-    scales = (60*np.array(scales)).astype(int)
-    if MAP.phi: f = 'f'
-    else: f = 'k'
-    
-    if debug: Rmax, amax, sigmax = 0, 0, 0
-    data = np.array([])
-    for R in scales:
-        for a in alphas:
-            spots = np.load(FNAME(f, R, a, sim, mode))
-            if mode=='p':
-                test = np.load(FNAME(f, R, a, sim, 's'))
-                spots = spots[test<-4.]
-            if debug and spots.size!=0:
-                if abs(spots).max()>sigmax:
-                    Rmax, amax, sigmax = R, a, abs(spots).max()
-            data = np.concatenate((data, spots))
-    if mode=='p': data = data.astype(int)
-    
-    if debug:
-        return data, (Rmax, amax, sigmax)
-    else:
-        return data
-
-def pValue(data, sims, metric):
-    if metric=='s2n':
-        pvalue = sims[sims>data].size/sims.size
-    elif metric=='area':
-        pvalue = sims[sims>data].size/sims.size
-    
-    return pvalue
-
-def histSims(scales, alphas, metric, plot=True, debug=False):
-    '''
-    Returns most extreme values in terms of signal to noise for data and 
-    simulations. Parameters are:
-    - scales: container - includes the scales of filters to be considered
-    - alphas: container - includes the alphas of filters to be considered
-    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
-                                used
-    - plot: bool - if True, plots histogram
-    '''
-    sims = np.zeros(lmr.NSIMS+1)
-    
-    if metric=='s2n':
-        for n in range(lmr.NSIMS+1):
-            sig = selectFilts(n, scales, alphas, 's')
-            if sig.size==0:
-                sims[n] = 0
-            else:
-                sims[n] = abs(sig).max()
-        xlabel = r'Signal to noise ratio for Extreme Spots'
-    elif metric=='area':
-        for n in range(lmr.NSIMS+1):
-            ll, bb, cc = plotFlatExtrema(n, scales, alphas)
-            sims[n] = findArea(ll, bb, cc)
-        xlabel = r'Number of pixels above threshold of $3\sigma$'
-    elif metric=='sigf' or metric=='sigk':
-        if metric=='sigf': phi = 0
-        else: phi = 1
-        
-        idxR = np.where( np.isin(FR, scales) )
-        idxa = np.where( np.isin(FA, alphas) )
-        
-        sims = np.load(MAP.dir+'results/extremaTot.npy')[:, phi, idxR, idxa, :]
-        sims = abs(sims)
-        
-        if debug:
-            idx = np.where(sims==sims[:,:,:,-1].max())
-            filters = [scales[idx[1]], alphas[idx[2]]]
-        
-        sims = sims.max((0,1,2))
-        phi = [r'$\kappa$', r'$\phi$'][phi]
-        xlabel = r'Absolute signal for Extreme Spots'
-    else:
-        raise ValueError('Check the metric')
-    
-    if plot:
-        pvalue = sims[sims>sims[-1]].size/sims.size
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.hist(sims[:-1], bins=BINS, normed=False, histtype='step', lw=1.5)
-        ax.axvline(x=sims[-1], color='r', ls='--', label='p = {}'.format(
-                   pvalue))
-        ax.set_title(xlabel, fontsize=14)
-        ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
-        ax.legend(loc='upper right', prop={'size':14})
-    
-    if debug: return sims, filters
-    else: return sims
-
-def histPvals(scales, alphas, metric, debug=False):
-    '''
-    Plots histogram of p-values from histSims() for all simulations and data.
-    Parameters are:
-    - scales: container - includes the scales of filters to be considered
-    - alphas: container - includes the alphas of filters to be considered
-    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
-                                used
-    '''
-    scales, alphas = np.array(scales), np.array(alphas)
-    pvalues = np.zeros((scales.size, alphas.size, lmr.NSIMS+1))
-    for s in range(scales.size):
-        print(s)
-        for a in range(alphas.size):
-            sims = histSims([scales[s]], [alphas[a]], metric, plot=False)
-            for sim in range(sims.size):
-                pvalues[s,a,sim] = sims[sims>sims[sim]].size/sims.size
-    
-    filters = []
-    pvmins = pvalues.min((0,1))
-    for i in range(pvmins.size):
-        idxs = np.where(pvalues[:,:,i]==pvmins[i])
-        scale = scales[np.array(idxs[0])]
-        alpha = alphas[np.array(idxs[1])]
-        filters.append([scale, alpha])
-    
-    sims, data = pvmins[:-1], pvmins[-1]
-    pv = pvmins[pvmins<=pvmins[-1]].size/pvmins.size
-    
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.hist(sims, bins=BINS, normed=False, histtype='step', lw=1.5)
-    ax.axvline(x=data, color='r', ls='--', label='p = {}'.format(pv))
-    ax.set_title(r'Most extreme $p$-values')
-    ax.legend(loc='upper right', prop={'size':14})
-    
-    return pvmins, filters
-
 def plotFlatExtrema(sim, scales, alphas, gran=360, plot=False):
     '''
     Returns 2D histogram of the sky with the number of pixels above the 
