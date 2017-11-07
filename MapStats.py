@@ -157,31 +157,50 @@ def csaverages(conserv=False, plot=True, res=None):
         
     return anuli
 
-def xCorrelate(radius, conserv=False, plot=True, res=None):
+def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
     '''
     Correlates temperature Cold Spot with lensing map.
     '''
+    tick = time.time()
+    
+    MAP.set_phi(phi)
     MAP.set_res(res)
     MAP.set_conserv(conserv)
     
     cstr = CSTR(conserv)
-    datadir = DIR+'results/n'+STR4(MAP.res)+'_xcorr'+cstr+'.npy'
+    datadir = DIR+'results/n'+STR4(MAP.res)+'_xcorr_r'+STR2(radius)+cstr+'.npy'
     if os.path.isfile(datadir):
         xcorr = np.load(datadir)
     else:
         tmap = tcs.TempMap(MAP.res)
-        tcoord = lonlat2colatlon(tcs.COORDCS)
-        tpixs = getDisk(tcoord, radius)
+        lenslons = np.arange(0,360,2*radius)
+        lenslats = np.arange(0,180,2*radius)
     
-        pixs = [tpixs] #Rotate whole map so that all pixs have equal size and all centres are tcs.COORCS
-        lenslons = np.arange(tcs.COORDCS[0], tcs.COORDCS[0]+360, 2*radius)%360
-        lenslats = np.arange(tcs.COORDCS[1], tcs.COORDCS[1]+180, 2*radius)%180
-        for lon in lenslons:
-            for lat in lenslats:
-                lcoord = lonlat2colatlon((lon, lat))
-                lpixs = getDisk(lcoord, radius)
-                print(lpixs.size)
-                pixs.append(lpixs)
+        xcorr = np.zeros((lenslons.size, lenslats.size, lmr.NSIMS+1))
+        for lon in range(lenslons.size):
+            for lat in range(lenslats.size):
+            
+                print('START: {:.1f}'.format(time.time() - tick)); tick = time.time()
+                
+                Map = rotate(tmap, lenslons[lon], lenslats[lat])
+                
+                print('ROTATED: {:.1f}'.format(time.time() - tick)); tick = time.time()
+                
+                tmap.sim = Map
+                nmp, nmk = filterMap(tmap, 300, 2, mask=True)
+                tcoord = detectES(nmp, nmk, 'c')
+                tmap.map = b
+                
+                print(time.time() - tick); tick = time.time()
+                print(lenslons[lon], lenslats[lat])
+                print(colatlon2lonlat(tcoord))
+                print()
+                
+                tpixs = getDisk(tcoord, radius)
+                test = Map[tpixs]
+                for s in range(lmr.NSIMS+1):
+                    MAP.loadSim(s)
+                    xcorr[lon, lat, s] = np.sum(test*MAP.sim[tpixs])
                 
         np.save(datadir, xcorr)
     
@@ -394,6 +413,32 @@ def getDisk(centre, radius, mask=None, edge=False):
     if mask is not None: pixs = pixs[np.where(mask[pixs]==1.)]
     return pixs
 
+def rotate(tmap, lon, lat):
+    '''
+    Rotates given map by given longitude and latitude, also plots the stages of 
+    the rotation if plot=True. !!! Does not take care of the very few masked 
+    pixels around the cold spot.
+    '''
+    t, p = hp.pix2ang(tmap.res, np.arange(tmap.map.size))
+    coord = tcs.COORDCS
+    
+    rot = hp.Rotator(rot=(-coord[0],0,0))
+    tn, pn = rot(t,p)
+    pixs = hp.ang2pix(tmap.res, tn, pn)
+    tmap.sim = tmap.map[pixs]
+    
+    rot = hp.Rotator(rot=(0,lat,0))
+    tn, pn = rot(t,p)
+    pixs = hp.ang2pix(tmap.res, tn, pn)
+    tmap.sim = tmap.sim[pixs]
+    
+    rot = hp.Rotator(rot=(coord[0]+lon,0,0))
+    tn, pn = rot(t,p)
+    pixs = hp.ang2pix(tmap.res, tn, pn)
+    tmap.sim = tmap.sim[pixs]
+    
+    return tmap.sim
+
 def detectES(Map, mask, hc):
     '''
     Returns coordinates of most extreme spot on given map. Parameter hc can be:
@@ -401,8 +446,8 @@ def detectES(Map, mask, hc):
     '''
     pixmax = np.where(Map==Map[mask==1.].max())[0][0]
     pixmin = np.where(Map==Map[mask==1.].min())[0][0]
-    if hc=='h': pix = pixmin
-    elif hc=='c': pix = pixmax
+    if hc=='h': pix = pixmax
+    elif hc=='c': pix = pixmin
     elif hc=='hc': pix = (pixmin, pixmax)
     elif hc=='': pix = float(np.where(abs(pixmin)>abs(pixmax), pixmin, pixmax))
     else:

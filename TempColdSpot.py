@@ -14,7 +14,7 @@ DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
 RAWSPEC = np.loadtxt(DIR+'data/aux/cltt.txt')
 CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
 
-COORDCS = (210., -57.) #lon, lat in degrees in Galactic coordinates
+COORDCS = (-150.6, -57.4) #lon, lat in degrees in Galactic coordinates
 BEAM = 5./60 * np.pi/180 #radians
 
 NSIDES = [2**x for x in range(4, 12)]
