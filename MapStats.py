@@ -167,8 +167,11 @@ def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
     MAP.set_res(res)
     MAP.set_conserv(conserv)
     
+    fk = FK(phi)
     cstr = CSTR(conserv)
-    datadir = DIR+'results/n'+STR4(MAP.res)+'_xcorr_r'+STR2(radius)+cstr+'.npy'
+    datadir = (DIR+'results/n'+STR4(MAP.res)+fk+'_xcorr_r'+STR2(radius)+cstr+
+               '.npy')
+    print(datadir)
     if os.path.isfile(datadir):
         xcorr = np.load(datadir)
     else:
@@ -176,38 +179,49 @@ def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
         lenslons = np.arange(0,360,2*radius)
         lenslats = np.arange(0,180,2*radius)
     
-        xcorr = np.zeros((lenslons.size, lenslats.size, lmr.NSIMS+1))
+        xcorr = np.zeros((4, lenslons.size, lenslats.size))
+        print('START: {:.1f}'.format(time.time() - tick)); tick = time.time()
         for lon in range(lenslons.size):
             for lat in range(lenslats.size):
-            
-                print('START: {:.1f}'.format(time.time() - tick)); tick = time.time()
                 
-                Map = rotate(tmap, lenslons[lon], lenslats[lat])
+                rotate(tmap, lenslons[lon], lenslats[lat])
                 
-                print('ROTATED: {:.1f}'.format(time.time() - tick)); tick = time.time()
-                
-                tmap.sim = Map
-                nmp, nmk = filterMap(tmap, 300, 2, mask=True)
+                nmp = filterMap(tmap, 300, 2, mask=False)
+                nmk = np.ones(nmp.size)
                 tcoord = detectES(nmp, nmk, 'c')
-                tmap.map = b
+                tpixs = getDisk(tcoord, radius)
+                size = np.where(MAP.mask[tpixs]==1.)[0].size
+                corrval = np.sum(tmap.sim[tpixs]*MAP.map[tpixs])
                 
-                print(time.time() - tick); tick = time.time()
-                print(lenslons[lon], lenslats[lat])
-                print(colatlon2lonlat(tcoord))
+                print('ROUND: {:.1f}'.format(time.time() - tick)); tick = time.time()
+                print('LON, LAT:', lenslons[lon], lenslats[lat])
+                plon, plat = colatlon2lonlat(tcoord)
+                print('CENTRE: ({0:.2f}, {1:.2f})'.format(plon, plat))
+                print('SIZE / PIXS: ({0} / {1})'.format(size, tpixs.size))
                 print()
                 
-                tpixs = getDisk(tcoord, radius)
-                test = Map[tpixs]
-                for s in range(lmr.NSIMS+1):
-                    MAP.loadSim(s)
-                    xcorr[lon, lat, s] = np.sum(test*MAP.sim[tpixs])
+                xcorr[0, lon, lat] = corrval
+                xcorr[1, lon, lat] = size
+                xcorr[2, lon, lat] = tcoord[0]
+                xcorr[3, lon, lat] = tcoord[1]
                 
         np.save(datadir, xcorr)
     
+    dirs = xcorr[0][xcorr[1]>0.9*xcorr[1].max()]
+    dircs = dirs[0]
+    ratio = dirs.size/xcorr[0].size
+    pvalue = dirs[dirs>dircs].size/(dirs.size+1)
     if plot:
-        pass
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.hist(dirs[1:], bins=BINS, normed=False, histtype='step', lw=1.5)
+        ax.axvline(x=dircs, color='r', ls='--', label='p = {0:.2f}'.format(
+                   pvalue))
+        ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+        ax.set_xlabel(r'Correlation value')
+        ax.legend(loc='upper right', prop={'size':14})
     
-    return xcorr
+    return xcorr, pvalue, ratio
 
 def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True, 
              res=None):
@@ -228,8 +242,8 @@ def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True,
     scales = np.array(scales)
     alphas = np.array(alphas)
     
-    cstr = CSTR(conserv)
     fk = FK(phi)
+    cstr = CSTR(conserv)
     datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_univs'+cstr+'.npy'
     if os.path.isfile(datadir):
         univs = np.load(datadir)
@@ -287,8 +301,8 @@ def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
     if plts==plta==False:
         raise ValueError('Neither scales nor alphas are arrays')
     
-    cstr = CSTR(conserv)
     fk = FK(phi)
+    cstr = CSTR(conserv)
     datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_pvalues_'+metric+cstr+'.npy'
     if os.path.isfile(datadir):
         pvalues = np.load(datadir)
@@ -416,8 +430,8 @@ def getDisk(centre, radius, mask=None, edge=False):
 def rotate(tmap, lon, lat):
     '''
     Rotates given map by given longitude and latitude, also plots the stages of 
-    the rotation if plot=True. !!! Does not take care of the very few masked 
-    pixels around the cold spot.
+    the rotation if plot=True. Stores rotated map in the sim and slm attributes 
+    of tmap.
     '''
     t, p = hp.pix2ang(tmap.res, np.arange(tmap.map.size))
     coord = tcs.COORDCS
@@ -436,8 +450,7 @@ def rotate(tmap, lon, lat):
     tn, pn = rot(t,p)
     pixs = hp.ang2pix(tmap.res, tn, pn)
     tmap.sim = tmap.sim[pixs]
-    
-    return tmap.sim
+    tmap.slm = hp.map2alm(tmap.sim)
 
 def detectES(Map, mask, hc):
     '''

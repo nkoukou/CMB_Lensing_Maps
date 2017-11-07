@@ -35,9 +35,6 @@ def filterMap(MAP, scale, a, mask=True):
     '''
     R = np.radians(scale/60)
     
-    Map = MAP.sim
-    mlm = MAP.slm
-    
     if not a:
         sigma = R/( 2.*np.sqrt(2.*np.log(2.)) )
         ell = np.arange(MAP.lmax + 1.)
@@ -51,7 +48,7 @@ def filterMap(MAP, scale, a, mask=True):
         ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
         fl = ellFac * np.conj(wlm)
         fmask = MAP.dir+'a_maskFiltS'+STR4(scale)+'.npy'
-    convAlm = hp.almxfl(alm=mlm, fl=fl)
+    convAlm = hp.almxfl(alm=MAP.slm, fl=fl)
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
     
     if mask:
