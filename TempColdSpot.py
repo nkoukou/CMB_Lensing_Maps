@@ -11,6 +11,7 @@ from matplotlib.colors import ListedColormap
 
 # Global constants and functions
 DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
+dirfig = lambda ttl: DIR+'drafts/b_draft/figs/'+ttl+'.pdf'
 RAWSPEC = np.loadtxt(DIR+'data/aux/cltt.txt')
 CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
 
@@ -23,6 +24,11 @@ for nside in NSIDES: FWHM[nside] = BEAM * (2048/nside) #radians
 
 LMAX = lambda res: 3*res-1
 STR4 = lambda res: str(res).zfill(4)
+
+def fmt(x):
+    a, b = '{:.2e}'.format(x).split('e')
+    b = int(b)
+    return r'${} \times 10^{{{}}}$'.format(a, b)
 
 ###
 
@@ -114,18 +120,30 @@ class TempMap(object):
         Plots map of phi or kappa and includes mask if mask=True.
         '''
         Map = np.copy(self.map)
-        ttl = r'Temperature $T$'
-        fmt = '%07.3e'
-        unt = r'$T (K)$'
+        unt = r'$T\ (K)$'
+        flnm = 'temp_n'+STR4(self.res)
         if mask:
             Map[self.mask==0.] = hp.UNSEEN
             Map = hp.ma(Map)
         
+        ticks = np.linspace(0.9*Map.min(), 0.9*Map.max(), 2)
+        
         cmap = ListedColormap(CMB_CMAP)
         cmap.set_under('w')
         cmap.set_bad('gray')
-        hp.mollview(Map, title=ttl+r' at $N_{{side}} = {0}$'.format(self.res), 
-                    format=fmt, cmap=cmap, cbar=True, unit=unt)
+        
+        hp.mollview(Map, title = '', cmap=cmap, cbar=False)
+
+        fig = plt.gcf()
+        ax = plt.gca()
+        image = ax.get_images()[0]
+        cbar = fig.colorbar(image, ax=ax, orientation='horizontal', pad=0.04,
+               fraction=0.05, aspect=26, ticks=[Map.min(),Map.max()])
+        cbar.set_ticks(ticks)
+        cbar.ax.set_xticklabels([fmt(Map.min()), fmt(Map.max())])
+        cbar.ax.set_xlabel(unt, fontsize=16, labelpad=-18)
+        cbar.ax.tick_params(labelsize=16, pad=10, size=0)
+        plt.savefig(dirfig(flnm), bbox_inches='tight')
     
 
 

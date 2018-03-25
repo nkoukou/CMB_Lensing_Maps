@@ -49,7 +49,7 @@ def filterMap(MAP, scale, a, mask=True):
         w = mexHat(R, a, MAP.cb)
         fmask = MAP.dir+'a_maskFiltS'+STR4(scale)+'.npy'
     wlm = hp.map2alm(w, lmax=MAP.lmax, mmax=0)
-    ellFac = np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
+    ellFac = 4*np.pi/(2.*np.arange(MAP.lmax+1)+1) #np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
     fl = ellFac * np.conj(wlm)
     convAlm = hp.almxfl(alm=MAP.slm, fl=fl)
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
@@ -63,7 +63,7 @@ def filterMap(MAP, scale, a, mask=True):
         newmap = (newmap, newmask)
     return newmap
 
-def plotMap(filtmap, filtmask, phi, ttl=None):
+def plotMap(filtmap, filtmask, phi, rot=None, ttl=None):
     '''
     Plots given map with given mask. Both must have already been filtered at 
     given scale and a.
@@ -74,7 +74,7 @@ def plotMap(filtmap, filtmask, phi, ttl=None):
     Map[filtmask==0.] = hp.UNSEEN
     Map = hp.ma(Map)
     
-    if phi is None: unt = r'$T (K)$'
+    if phi is None: unt = r'$T\ (K)$'
     elif phi: unt = r'$\phi$'
     else: unt = r'$\kappa$'
     
@@ -86,7 +86,8 @@ def plotMap(filtmap, filtmask, phi, ttl=None):
     cmap.set_under('w')
     cmap.set_bad('gray')
     
-    hp.mollview(Map, title = '', cmap=cmap, cbar=False)
+    if rot is None: rot = (0,0)
+    hp.mollview(Map, title = '', rot=rot, cmap=cmap, cbar=False)
     
     fig = plt.gcf()
     ax = plt.gca()

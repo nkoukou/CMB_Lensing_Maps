@@ -18,6 +18,7 @@ import healpy as hp
 import matplotlib as mat
 import matplotlib.pylab as plt
 from matplotlib.colors import ListedColormap
+from matplotlib.ticker import FormatStrFormatter
 import scipy.ndimage.measurements as snm
 import LensMapRecon as lmr
 import TempColdSpot as tcs
@@ -27,7 +28,7 @@ from MapFilts import filterMap
 MAP = lmr.LensingMap(phi=False, conserv=False, res=256)
 
 font = {'size'   : 12}
-lines = {'lw'   : 1.}
+lines = {'lw'   : 2.}
 mat.rc('font', **font)
 mat.rc('lines', **lines)
 
@@ -39,10 +40,10 @@ NSIMS = 100
 FRTEST = np.array([25, 50, 100, 1000]) #10 gives problems with mask
 FRN = np.linspace(30, 900, 30)
 FR = np.concatenate((FRTEST, FRN))
-FA = np.linspace(0,10,11)
+FA = np.linspace(0,5,6)
 
 BINS = 10
-MOMENTS = ('Mean', 'Variance', 'Skewness', 'Kurtosis')
+MOMENTS = ('Mean', r'$\sigma$', 'Skewness', 'Kurtosis')
 QUANTS = (r'$\kappa$', r'$\phi$')
 
 STR2 = lambda res: str(int(res)).zfill(2)
@@ -57,11 +58,13 @@ FK = lambda phi: 'f' if phi else 'k'
 def moments(conserv=False, plot=True, res=None):
     '''
     '''
+    print('START')
     MAP.set_res(res)
     MAP.set_conserv(conserv)
-    
+        
     cstr = CSTR(conserv)
     datadir = DIR+'results/n'+STR4(MAP.res)+'_moments'+cstr+'.npy'
+    print(datadir)
     if os.path.isfile(datadir):
         data = np.load(datadir)
     else:
@@ -79,26 +82,37 @@ def moments(conserv=False, plot=True, res=None):
         fig, axarr = plt.subplots(2, 3)
         for p in [0,1]:
             for i in range(3):
-                ax = axarr[p,i]
-                ax.hist(data[p,i,:-1], bins=BINS, normed=False, histtype='step', 
-                        color='b')
-                ax.axvline(x=data[p,i,-1], color='r', ls='--')
+                if i==0:
+                    c = 10**4
+                    ttl = MOMENTS[i+1]+r' $\left(\times 10^4 \right)$'
+                    num = '0' if p==0 else '2'
+                else:
+                    c = 1
+                    ttl = MOMENTS[i+1]
+                    num = '2'
                 
-                if p==1: ax.set_xlabel(MOMENTS[i+1], fontsize=12, labelpad=15)
+                ax = axarr[p,i]
+                ax.hist(c*data[p,i,:-1], bins=BINS, normed=False, 
+                        histtype='step', color='b')
+                ax.axvline(x=c*data[p,i,-1], color='r', ls='--')
+                
+                if p==1: ax.set_xlabel(ttl, fontsize=12, labelpad=15)
                 if i==0: ax.set_ylabel(QUANTS[p], fontsize=12)
-                ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+                ax.xaxis.set_major_formatter(FormatStrFormatter('%.'+num+'f'))
     
     return data
 
 def csaverages(conserv=False, plot=True, res=None):
     '''
     '''
+    print('START')
     MAP.set_res(res)
     MAP.set_conserv(conserv)
     
     radii = np.linspace(0.2, 40, 100)
     cstr = CSTR(conserv)
-    datadir = DIR+'results/n'+STR4(MAP.res)+'_csAnuli'+cstr+'.npy'
+    datadir = DIR+'results/n'+STR4(MAP.res)+'_csAnnuli'+cstr+'.npy'
+    print(datadir)
     if os.path.isfile(datadir):
         anuli = np.load(datadir)
     else:
@@ -153,7 +167,8 @@ def csaverages(conserv=False, plot=True, res=None):
         ax.plot(radii[1:], anuli[2], 'g--', label=QUANTS[1])
         
         ax.set_xlabel(r'Radius (deg)')
-        ax.legend(loc='upper right', prop={'size':14})
+        ax.set_ylabel(r'Annular normalised mean signal')
+        ax.legend(loc='lower right', prop={'size':14})
         
     return anuli
 
@@ -161,6 +176,7 @@ def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
     '''
     Correlates temperature Cold Spot with lensing map.
     '''
+    print('START')
     tick = time.time()
     
     MAP.set_phi(phi)
@@ -214,14 +230,39 @@ def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
     if plot:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.hist(dirs[1:], bins=BINS, normed=False, histtype='step', lw=1.5)
-        ax.axvline(x=dircs, color='r', ls='--', label='p = {0:.2f}'.format(
-                   pvalue))
+        c = 10**5 if phi else 10**3
+        ttl = r'$(\times 10^5)$' if phi else r'$(\times 10^3)$'
+        
+        ax.hist(c*dirs[1:], bins=BINS, normed=False, histtype='step', lw=1.5)
+        ax.axvline(x=c*dircs, color='r', ls='--', label=r'CS direction')
+        #'p = {0:.2f}'.format(pvalue)
         ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
-        ax.set_xlabel(r'Correlation value')
-        ax.legend(loc='upper right', prop={'size':14})
+        ax.set_xlabel(r'Correlation value '+ttl)
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.0i'))
+        leg = ax.legend(loc='upper right', prop={'size':14})
+        leg.get_frame().set_alpha(1)
     
     return xcorr, pvalue, ratio
+
+def plotXcorr(radii, conserv=False, plot=True, res=None):
+    pvs, ratios = np.zeros((2,len(radii))), np.zeros((2,len(radii)))
+    
+    for i in range(len(radii)):
+        xcorr, pvs[0,i], ratios[0,i] = xCorrelate(
+                                       phi=False, plot=False, radius=radii[i])
+        xcorr, pvs[1,i], ratios[1,i] = xCorrelate(
+                                       phi=True, plot=False, radius=radii[i])
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(radii, pvs[0], 'bx:', label=r'$\kappa$')
+        ax.plot(radii, pvs[1], 'gx--', label=r'$\phi$')
+        ax.set_xlabel(r'Cold Spot radius (deg)')
+        ax.set_ylabel(r'$p$-value')
+        ax.legend(loc='upper right', prop={'size':14})
+    
+    return pvs, ratios
 
 def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True, 
              res=None):
@@ -235,6 +276,7 @@ def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True,
                                 used
     - plot: bool - if True, plots histogram
     '''
+    print('START')
     MAP.set_phi(phi)
     MAP.set_res(res)
     MAP.set_conserv(conserv)
@@ -245,6 +287,7 @@ def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True,
     fk = FK(phi)
     cstr = CSTR(conserv)
     datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_univs'+cstr+'.npy'
+    print(datadir)
     if os.path.isfile(datadir):
         univs = np.load(datadir)
     else:
@@ -290,9 +333,10 @@ def histSims(scales, alphas, metric, phi=False, conserv=False, plot=True,
     return pvalue, sims
 
 def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True, 
-               res=None):
+                res=None):
     '''
     '''
+    print('START')
     plts = plta = False
     if len(scales) > 1:
         scales = np.array(scales); plts = True
@@ -304,6 +348,7 @@ def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
     fk = FK(phi)
     cstr = CSTR(conserv)
     datadir = DIR+'results/n'+STR4(MAP.res)+fk+'_pvalues_'+metric+cstr+'.npy'
+    print(datadir)
     if os.path.isfile(datadir):
         pvalues = np.load(datadir)
     else:
@@ -311,14 +356,14 @@ def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
         for s in range(FR.size):
             for a in range(FA.size):
                 pvalues[s,a], sims = histSims([FR[s]], [FA[a]], metric, 
-                                 phi=False, conserv=False, plot=False, res=None)
+                                 phi=phi, conserv=conserv, plot=False, res=res)
         np.save(datadir, pvalues)
     
     if plot:
         fr = np.array(np.where(np.in1d(FR, scales))[0])
         fa = np.array(np.where(np.in1d(FA, alphas))[0])
-        yaxis = pvalues[fr,:][:,fa]
         if plts!=plta:
+            yaxis = pvalues[fr,:][:,fa]
             fig = plt.figure()
             ax = fig.add_subplot(111)
             if plts:
@@ -331,8 +376,20 @@ def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
             ax.set_xlabel(xlabel)
             ax.set_ylabel(r'$p$-value')
         
-        if plts and plta:
-            pass
+        if plts and plta: #!!! works only if alphas==FA
+            fig, axarr = plt.subplots(3,2, sharex=True, sharey=True)
+            for i in range(3):
+                for j in range(2):
+                    yaxis = pvalues[fr,:][:,2*i+j]
+                    ax = axarr[i,j]
+                    
+                    xaxis = scales; p = alphas[2*i+j]
+                    ax.plot(xaxis, np.squeeze(yaxis), 'b-', 
+                            label=r'$\alpha = %g$' % (p))
+                    ax.legend(loc='lower right', prop={'size':12})
+                    if i==2: ax.set_xlabel(r'$R (^\prime)$')
+                    if j==0: ax.set_ylabel(r'$p$-value')
+    return pvalues[fr,:][:,fa]
 
 def histPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True, 
                 res=None):
@@ -342,8 +399,8 @@ def histPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
     Parameters are:
     - scales: container - includes the scales of filters to be considered
     - alphas: container - includes the alphas of filters to be considered
-    - metric: 'area' or 's2n' - determines if area or signal-to-noise metric is
-                                used
+    - metric: 'abssig', 'area' or 's2n' - determines if absolute signal, area or
+              signal-to-noise metric is used
     '''
     scales, alphas = np.array(scales), np.array(alphas)
     pvalues = np.zeros((scales.size, alphas.size, lmr.NSIMS+1))
@@ -381,11 +438,30 @@ def histPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.hist(sims, bins=BINS, normed=False, histtype='step', lw=1.5)
-        ax.axvline(x=data, color='r', ls='--', label='p = {0:.2f}'.format(pv))
-        ax.set_title(r'Most extreme $p$-values')
-        ax.legend(loc='upper right', prop={'size':14})
+        ax.axvline(x=data, color='r', ls='--', label='Real map'.format(pv))
+        #ax.set_title(r'Most extreme $p$-values')
+        ax.set_xlabel(r'lowest $p$-value')
+        leg = ax.legend(loc='upper right', prop={'size':14})
+        leg.get_frame().set_alpha(1)
     
     return pvmins, filters            
+
+############
+#print("Let's do it boiz!")
+#for r in [2**x for x in range(4, 12)]:
+#    moments(plot=False, res=r)
+#moments(plot=False, res=2048)
+#MAP.set_res(256)
+#csaverages(plot=False)
+print(MAP)
+#for r in [3,4,5]:
+#    xCorrelate(phi=True, plot=False, radius=r)
+#    xCorrelate(phi=False, plot=False, radius=r)
+#histSims(scales=FR, alphas=FA, metric='abssig', phi=True, plot=False)
+#plotPvalues(scales=FR, alphas=FA, metric='abssig', phi=True, plot=False)
+#plotPvalues(scales=FR, alphas=FA, metric='abssig', phi=False, plot=False)
+#print('DONE BOIZ')
+############
 
 # Basic pixel selection functions
 def lonlat2colatlon(coord):
