@@ -115,7 +115,7 @@ def csaverages(conserv=False, plot=True, res=None):
     print(datadir)
     if os.path.isfile(datadir):
         anuli = np.load(datadir)
-    else:
+    else:       
         tcoord = lonlat2colatlon(tcs.COORDCS)
         
         tmap = tcs.TempMap(MAP.res)
@@ -136,6 +136,7 @@ def csaverages(conserv=False, plot=True, res=None):
             if i%50==0: print(i)
             pixs = getDisk(tcoord, radius, tmask)
             sizes[0,i] = pixs.size
+             
             averages[0,i] = tmap[pixs].mean()
             pixs = getDisk(tcoord, radius, kmask)
             sizes[1,i] = pixs.size
@@ -166,7 +167,7 @@ def csaverages(conserv=False, plot=True, res=None):
         ax.plot(radii[1:], anuli[1], 'b:', label=QUANTS[0])
         ax.plot(radii[1:], anuli[2], 'g--', label=QUANTS[1])
         
-        ax.set_xlabel(r'Radius (deg)')
+        ax.set_xlabel(r'Radius [deg]')
         ax.set_ylabel(r'Annular normalised mean signal')
         ax.legend(loc='lower right', prop={'size':14})
         
@@ -223,7 +224,7 @@ def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
                 
         np.save(datadir, xcorr)
     
-    dirs = xcorr[0][xcorr[1]>0.9*xcorr[1].max()]
+    dirs = abs(xcorr[0][xcorr[1]>0.9*xcorr[1].max()])
     dircs = dirs[0]
     ratio = dirs.size/xcorr[0].size
     pvalue = dirs[dirs>dircs].size/(dirs.size+1)
@@ -258,7 +259,7 @@ def plotXcorr(radii, conserv=False, plot=True, res=None):
         ax = fig.add_subplot(111)
         ax.plot(radii, pvs[0], 'bx:', label=r'$\kappa$')
         ax.plot(radii, pvs[1], 'gx--', label=r'$\phi$')
-        ax.set_xlabel(r'Cold Spot radius (deg)')
+        ax.set_xlabel(r'Cold Spot radius [deg]')
         ax.set_ylabel(r'$p$-value')
         ax.legend(loc='upper right', prop={'size':14})
     
@@ -368,7 +369,7 @@ def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
             ax = fig.add_subplot(111)
             if plts:
                 xaxis = scales; p = alphas[0]
-                xlabel = r'$R (^\prime)$'
+                xlabel = r'$R [^\prime]$'
             if plta:
                 xaxis = alphas; p = scales[0]
                 xlabel = r'$\alpha$'
@@ -387,7 +388,7 @@ def plotPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
                     ax.plot(xaxis, np.squeeze(yaxis), 'b-', 
                             label=r'$\alpha = %g$' % (p))
                     ax.legend(loc='lower right', prop={'size':12})
-                    if i==2: ax.set_xlabel(r'$R (^\prime)$')
+                    if i==2: ax.set_xlabel(r'$R [^\prime]$')
                     if j==0: ax.set_ylabel(r'$p$-value')
     return pvalues[fr,:][:,fa]
 

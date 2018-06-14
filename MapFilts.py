@@ -10,7 +10,7 @@ from matplotlib.colors import ListedColormap
 
 # Global constants and functions
 DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
-dirfig = lambda ttl: DIR+'drafts/b_draft/figs/'+ttl+'.pdf'
+dirfig = lambda ttl: DIR+'drafts/c_draft/figs/'+ttl+'.pdf'
 CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
 
 NSIDES = [2**x for x in range(4, 12)]
@@ -246,7 +246,7 @@ def profileFilts():
         R = np.radians(r)
         W = mexHat(R, 2, thetas)/(2*Amp(R,2))
         ax.plot(thetas*180/np.pi, W, label=r'$R$ = {0}'.format(r))
-    ax.set_xlabel(r'$\theta$ (deg)', fontsize=12)
+    ax.set_xlabel(r'$\theta$ [deg]', fontsize=12)
     ax.set_ylabel(r'$W(\theta; R, \alpha=2)$', fontsize=12)
     ax.set_xlim([0, 80])
     ax.set_ylim([-0.2,1])
@@ -259,7 +259,7 @@ def profileFilts():
     for a in [1, 2, 4, 7, 10]:
         W = mexHat(R, a, thetas)/(a*Amp(R,a))
         ax.plot(thetas*180/np.pi, W, label=r'$\alpha$ = {0}'.format(a))
-    ax.set_xlabel(r'$\theta$ (deg)', fontsize=12)
+    ax.set_xlabel(r'$\theta$ [deg]', fontsize=12)
     ax.set_ylabel(r'$W(\theta; R=5^\circ, \alpha)$', fontsize=12)
     ax.set_xlim([0, 45])
     ax.set_ylim([-0.2,1])
@@ -273,7 +273,7 @@ def profileFilts():
         sigma = R/( 2.*np.sqrt(2.*np.log(2.)) )
         G = np.exp( - thetas*thetas /(2*sigma*sigma) )
         ax.plot(thetas*180/np.pi, G, label=r'$R$ = {0}'.format(r))
-    ax.set_xlabel(r'$\theta$ (deg)', fontsize=12)
+    ax.set_xlabel(r'$\theta$ [deg]', fontsize=12)
     ax.set_ylabel(r'$G(\theta; R)$', fontsize=12)
     ax.set_xlim([0, 35])
     ax.set_ylim([-0.05,1])

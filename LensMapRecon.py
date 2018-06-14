@@ -10,7 +10,7 @@ from matplotlib.colors import ListedColormap
 
 # Global constants and functions
 DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
-dirfig = lambda ttl: DIR+'drafts/b_draft/figs/'+ttl+'.pdf'
+dirfig = lambda ttl: DIR+'drafts/c_draft/figs/'+ttl+'.pdf'
 RAWSPEC = np.loadtxt(DIR+'data/aux/nlkk.dat')
 CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
 
