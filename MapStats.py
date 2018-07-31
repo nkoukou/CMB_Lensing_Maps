@@ -173,6 +173,16 @@ def csaverages(conserv=False, plot=True, res=None):
         
     return anuli
 
+def csextreme(conserv=False, plot=True, res=None):
+    radii = np.linspace(0.2, 40, 100)
+    anuli = csaverages(conserv, res, plot=False)
+    rs = []
+    for i in range(3):
+        rs.append()
+    pass
+    
+    
+
 def xCorrelate(radius, phi=False, conserv=False, plot=True, res=None):
     '''
     Correlates temperature Cold Spot with lensing map.
@@ -454,13 +464,14 @@ def histPvalues(scales, alphas, metric, phi=False, conserv=False, plot=True,
 #moments(plot=False, res=2048)
 #MAP.set_res(256)
 #csaverages(plot=False)
-print(MAP)
-#for r in [3,4,5]:
+#print(MAP)
+#for r in range(3,17):
+#    print('RADIUS = ', r)
 #    xCorrelate(phi=True, plot=False, radius=r)
 #    xCorrelate(phi=False, plot=False, radius=r)
 #histSims(scales=FR, alphas=FA, metric='abssig', phi=True, plot=False)
-#plotPvalues(scales=FR, alphas=FA, metric='abssig', phi=True, plot=False)
-#plotPvalues(scales=FR, alphas=FA, metric='abssig', phi=False, plot=False)
+#plotPvalues(scales=FR, alphas=FA, metric='abssig', phi=True, plot=True)
+#plotPvalues(scales=FR, alphas=FA, metric='abssig', phi=False, plot=True)
 #print('DONE BOIZ')
 ############
 
@@ -542,6 +553,7 @@ def detectES(Map, mask, hc):
     elif hc=='': pix = float(np.where(abs(pixmin)>abs(pixmax), pixmin, pixmax))
     else:
         raise ValueError('Check parameter hc')
+    pix = int(pix)
     coord = hp.pix2ang(nside=MAP.res, ipix=pix)
     return coord
 
@@ -648,7 +660,7 @@ def plotMapExtrema(Map, mask, thresh=3, plot=False, savefig=None):
         newmap = hp.ma(newmap)
         fmt = '%07.3e'
         unt = r'$\kappa$'
-        ttl = r'Spots more extreme than {0}$\sigma$'.format(thresh)
+        ttl = r'Spots more extreme than {0} $\sigma$'.format(thresh)
         cmap = ListedColormap(np.loadtxt('Figures/cmb_cmap.txt')/255.)
         cmap.set_under('w')
         cmap.set_bad('gray')

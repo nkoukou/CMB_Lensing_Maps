@@ -10,7 +10,7 @@ from matplotlib.colors import ListedColormap
 
 # Global constants and functions
 DIR = '/media/nikos/00A076B9A076B52E/Users/nkoukou/Desktop/UBC/'
-dirfig = lambda ttl: DIR+'drafts/c_draft/figs/'+ttl+'.pdf'
+dirfig = lambda ttl: DIR+'drafts/d_draft/figs/'+ttl+'.pdf'
 CMB_CMAP = np.loadtxt(DIR+'data/aux/cmb_cmap.txt')/255.
 
 NSIDES = [2**x for x in range(4, 12)]
@@ -49,7 +49,7 @@ def filterMap(MAP, scale, a, mask=True):
         w = mexHat(R, a, MAP.cb)
         fmask = MAP.dir+'a_maskFiltS'+STR4(scale)+'.npy'
     wlm = hp.map2alm(w, lmax=MAP.lmax, mmax=0)
-    ellFac = 4*np.pi/(2.*np.arange(MAP.lmax+1)+1) #np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
+    ellFac = 1 #np.sqrt(4*np.pi/(2.*np.arange(MAP.lmax+1)+1))
     fl = ellFac * np.conj(wlm)
     convAlm = hp.almxfl(alm=MAP.slm, fl=fl)
     newmap = hp.alm2map(convAlm, nside=MAP.res, pol=False, verbose=False)
@@ -80,7 +80,7 @@ def plotMap(filtmap, filtmask, phi, rot=None, ttl=None):
     
     #ttl = (r'Filtered map at $(R, \alpha) = $' 
     #       r'({0}, {1}) and $N_{{side}} = 'r'{2}'r'$'.format(scale, a, res))
-    ticks = np.linspace(0.99*Map.min(), 0.99*Map.max(), 2)
+    ticks = np.linspace(0.95*Map.min(), 0.99*Map.max(), 2)
     
     cmap = ListedColormap(CMB_CMAP)
     cmap.set_under('w')
